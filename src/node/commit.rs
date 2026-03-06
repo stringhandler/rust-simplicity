@@ -310,7 +310,7 @@ mod tests {
 
     use crate::decode::Error;
     use crate::human_encoding::Forest;
-    use crate::jet::Core;
+    use crate::jet::{Core, CoreEnv};
     use crate::node::SimpleFinalizer;
     use crate::{BitMachine, Value};
 
@@ -565,7 +565,7 @@ mod tests {
             // Execute the program to confirm that it worked
             let mut mac =
                 BitMachine::for_program(&diff1_final).expect("program has reasonable bounds");
-            mac.exec(&diff1_final, &()).unwrap();
+            mac.exec(&diff1_final, &CoreEnv::new()).unwrap();
         }
     }
 

@@ -6,3 +6,27 @@ mod environment;
 mod tests;
 
 pub use environment::{ElementsEnv, ElementsUtxo};
+
+use super::init::elements::Elements;
+use super::JetEnvironment;
+use crate::jet::Jet;
+use simplicity_sys::c_jets::frame_ffi::CFrameItem;
+use simplicity_sys::CElementsTxEnv;
+
+/// Type alias for the Elements transaction environment.
+pub type ElementsTxEnv = ElementsEnv<std::sync::Arc<elements::Transaction>>;
+
+impl JetEnvironment for ElementsTxEnv {
+    type Jet = Elements;
+    type CJetEnvironment = CElementsTxEnv;
+
+    fn c_jet_env(&self) -> &Self::CJetEnvironment {
+        self.c_tx_env()
+    }
+
+    fn c_jet_ptr(
+        jet: &Self::Jet,
+    ) -> &dyn Fn(&mut CFrameItem, CFrameItem, &Self::CJetEnvironment) -> bool {
+        jet.c_jet_ptr()
+    }
+}
