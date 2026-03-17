@@ -755,9 +755,9 @@ mod tests {
         assert_program_deserializable::<Core>(
             &[0xc9, 0xc4, 0x6d, 0xb8, 0x82, 0x30, 0x10],
             &[0xde, 0xad, 0xbe, 0xef],
-            "d7969920eff9a1ed0359aaa8545b239c69969e22c304c645a7b49bcc976a40a8",
-            "f7acbb077e7661a08384818bc8e3a275ed42ad446252575a35a35f71689fef78",
-            "3ce4a6390b4e4bda6330acda4800e66e5d2cae0f5a2888564c706f2b910146b8",
+            "ee2d966aeccfba7f1f1e54bc130237a6ae575db9c1132193d513aeb14b18151a",
+            "1f98ab7a78af799dc2efd3f4288a5934f288a73502b79db581eaf7342798a415",
+            "ce44dd4dfa9589ee67ad70fd1122421baf0b37b2b18d244702c93a9cf032dd17",
             "ycRtuIIwEA==",
         );
     }

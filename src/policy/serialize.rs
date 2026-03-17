@@ -90,7 +90,7 @@ where
 {
     let n_value = Word::u16(n);
     let const_n = N::const_word(inference_context, n_value);
-    let check_lock_distance = N::jet(inference_context, Elements::CheckLockDistance);
+    let check_lock_distance = N::jet(inference_context, Elements::BrokenDoNotUseCheckLockDistance);
 
     N::comp(&const_n, &check_lock_distance).expect("consistent types")
 }

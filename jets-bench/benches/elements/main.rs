@@ -10,8 +10,8 @@ use simplicity::types;
 use simplicity::types::Final;
 use simplicity::Value;
 use simplicity_bench::input::{
-    self, EqProduct, GenericProduct, InputSample, PrefixBit, Sha256Ctx, UniformBits,
-    DivMod12864Input,
+    self, DivMod12864Input, EqProduct, GenericProduct, InputSample, PrefixBit, Sha256Ctx,
+    UniformBits,
 };
 use simplicity_bench::{
     genesis_pegin, BenchSample, EnvSampling, InputSampling, JetBuffer, JetParams, SimplicityCtx8,
@@ -674,12 +674,12 @@ fn bench(c: &mut Criterion) {
         // No need to specially consider issuances or pegins
         (Elements::CheckLockHeight, ElementsBenchEnvType::Random),
         (Elements::CheckLockTime, ElementsBenchEnvType::Random),
-        (Elements::CheckLockDistance, ElementsBenchEnvType::Random),
-        (Elements::CheckLockDuration, ElementsBenchEnvType::Random),
+        (Elements::BrokenDoNotUseCheckLockDistance, ElementsBenchEnvType::Random),
+        (Elements::BrokenDoNotUseCheckLockDuration, ElementsBenchEnvType::Random),
         (Elements::TxLockHeight, ElementsBenchEnvType::Random),
         (Elements::TxLockTime, ElementsBenchEnvType::Random),
-        (Elements::TxLockDistance, ElementsBenchEnvType::Random),
-        (Elements::TxLockDuration, ElementsBenchEnvType::Random),
+        (Elements::BrokenDoNotUseTxLockDistance, ElementsBenchEnvType::Random),
+        (Elements::BrokenDoNotUseTxLockDuration, ElementsBenchEnvType::Random),
         (Elements::TxIsFinal, ElementsBenchEnvType::Random),
         // -----------------------------------------
         // Jets with no environment required, but no custom sampling required

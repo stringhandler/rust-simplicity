@@ -67,6 +67,22 @@ pub fn bip_0340_verify<T>(dst: &mut CFrameItem, src: CFrameItem, _env: &T) -> bo
     unsafe { elements_ffi::bip_0340_verify(dst, &src, std::ptr::null()) }
 }
 
+pub fn broken_do_not_use_check_lock_distance(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> bool {
+    unsafe { elements_ffi::broken_do_not_use_check_lock_distance(dst, &src, env) }
+}
+
+pub fn broken_do_not_use_check_lock_duration(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> bool {
+    unsafe { elements_ffi::broken_do_not_use_check_lock_duration(dst, &src, env) }
+}
+
+pub fn broken_do_not_use_tx_lock_distance(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> bool {
+    unsafe { elements_ffi::broken_do_not_use_tx_lock_distance(dst, &src, env) }
+}
+
+pub fn broken_do_not_use_tx_lock_duration(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> bool {
+    unsafe { elements_ffi::broken_do_not_use_tx_lock_duration(dst, &src, env) }
+}
+
 pub fn build_tapbranch(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> bool {
     unsafe { elements_ffi::build_tapbranch(dst, &src, env) }
 }
@@ -113,14 +129,6 @@ pub fn ch_64<T>(dst: &mut CFrameItem, src: CFrameItem, _env: &T) -> bool {
 
 pub fn ch_8<T>(dst: &mut CFrameItem, src: CFrameItem, _env: &T) -> bool {
     unsafe { elements_ffi::ch_8(dst, &src, std::ptr::null()) }
-}
-
-pub fn check_lock_distance(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> bool {
-    unsafe { elements_ffi::check_lock_distance(dst, &src, env) }
-}
-
-pub fn check_lock_duration(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> bool {
-    unsafe { elements_ffi::check_lock_duration(dst, &src, env) }
 }
 
 pub fn check_lock_height(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> bool {
@@ -1821,14 +1829,6 @@ pub fn tx_hash(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> b
 
 pub fn tx_is_final(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> bool {
     unsafe { elements_ffi::tx_is_final(dst, &src, env) }
-}
-
-pub fn tx_lock_distance(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> bool {
-    unsafe { elements_ffi::tx_lock_distance(dst, &src, env) }
-}
-
-pub fn tx_lock_duration(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> bool {
-    unsafe { elements_ffi::tx_lock_duration(dst, &src, env) }
 }
 
 pub fn tx_lock_height(dst: &mut CFrameItem, src: CFrameItem, env: &CElementsTxEnv) -> bool {

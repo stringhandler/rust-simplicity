@@ -100,4 +100,3 @@ find "./src/" -name "*.rs" -type f -print0 | xargs -0 \
      sed -i -r "s/rustsimplicity_[0-9]+_[0-9]+_(.*)([\"\(])/rustsimplicity_${SIMPLICITY_ALLOC_VERSION_CODE}_\1\2/g"
 # e. ...and the links= field in the manifest file
 sed -i -r "s/^links = \".*\"$/links = \"rustsimplicity_${SIMPLICITY_ALLOC_VERSION_CODE}\"/" Cargo.toml
-
