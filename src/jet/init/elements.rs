@@ -8378,6 +8378,257 @@ impl Jet for Elements {
             Elements::XorXor8 => Cost::from_milliweight(98),
         }
     }
+
+    fn read_effects(&self) -> Vec<crate::effects::TransactionField> {
+        use crate::effects::InputSelector::{Any, Current};
+        use crate::effects::OutputSelector;
+        use crate::effects::TransactionField as F;
+        match self {
+            // ── Current-input readers ─────────────────────────────────────
+            Elements::CurrentAmount => vec![F::InputAmount(Current)],
+            Elements::CurrentAnnexHash => vec![F::InputAnnexHash(Current)],
+            Elements::CurrentAsset => vec![F::InputAsset(Current)],
+            Elements::CurrentIndex => vec![F::CurrentInputIndex],
+            Elements::CurrentIssuanceAssetAmount => vec![F::IssuanceAssetAmount(Current)],
+            Elements::CurrentIssuanceAssetProof => vec![F::IssuanceAssetProof(Current)],
+            Elements::CurrentIssuanceTokenAmount => vec![F::IssuanceTokenAmount(Current)],
+            Elements::CurrentIssuanceTokenProof => vec![F::IssuanceTokenProof(Current)],
+            Elements::CurrentNewIssuanceContract => vec![F::NewIssuanceContract(Current)],
+            Elements::CurrentPegin => vec![F::InputPegin(Current)],
+            Elements::CurrentPrevOutpoint => vec![F::InputPrevOutpoint(Current)],
+            Elements::CurrentReissuanceBlinding => vec![F::ReissuanceBlinding(Current)],
+            Elements::CurrentReissuanceEntropy => vec![F::ReissuanceEntropy(Current)],
+            Elements::CurrentScriptHash => vec![F::InputScriptHash(Current)],
+            Elements::CurrentScriptSigHash => vec![F::InputScriptSigHash(Current)],
+            Elements::CurrentSequence => vec![F::InputSequence(Current)],
+            // ── Any-input readers ─────────────────────────────────────────
+            Elements::InputAmount => vec![F::InputAmount(Any)],
+            Elements::InputAnnexHash => vec![F::InputAnnexHash(Any)],
+            Elements::InputAsset => vec![F::InputAsset(Any)],
+            Elements::InputPegin => vec![F::InputPegin(Any)],
+            Elements::InputPrevOutpoint => vec![F::InputPrevOutpoint(Any)],
+            Elements::InputScriptHash => vec![F::InputScriptHash(Any)],
+            Elements::InputScriptSigHash => vec![F::InputScriptSigHash(Any)],
+            Elements::InputSequence => vec![F::InputSequence(Any)],
+            // ── Any-input aggregate hash jets ─────────────────────────────
+            Elements::AnnexHash => vec![F::InputAnnexHash(Any)],
+            Elements::InputAmountsHash => vec![F::InputAmount(Any)],
+            Elements::InputAnnexesHash => vec![F::InputAnnexHash(Any)],
+            Elements::InputOutpointsHash => vec![F::InputPrevOutpoint(Any)],
+            Elements::InputScriptSigsHash => vec![F::InputScriptSigHash(Any)],
+            Elements::InputScriptsHash => vec![F::InputScriptHash(Any)],
+            Elements::InputSequencesHash => vec![F::InputSequence(Any)],
+            Elements::InputUtxoHash => vec![
+                F::InputAsset(Any),
+                F::InputAmount(Any),
+                F::InputScriptHash(Any),
+            ],
+            Elements::InputUtxosHash => vec![
+                F::InputAsset(Any),
+                F::InputAmount(Any),
+                F::InputScriptHash(Any),
+            ],
+            Elements::InputHash => vec![
+                F::InputPrevOutpoint(Any),
+                F::InputSequence(Any),
+                F::InputAsset(Any),
+                F::InputAmount(Any),
+                F::InputAnnexHash(Any),
+                F::InputScriptHash(Any),
+                F::InputScriptSigHash(Any),
+                F::IssuanceAssetAmount(Any),
+                F::IssuanceTokenAmount(Any),
+                F::IssuanceAssetProof(Any),
+                F::IssuanceTokenProof(Any),
+                F::IssuanceEntropy(Any),
+                F::NewIssuanceContract(Any),
+                F::ReissuanceBlinding(Any),
+                F::ReissuanceEntropy(Any),
+            ],
+            Elements::InputsHash => vec![
+                F::InputPrevOutpoint(Any),
+                F::InputSequence(Any),
+                F::InputAsset(Any),
+                F::InputAmount(Any),
+                F::InputAnnexHash(Any),
+                F::InputScriptHash(Any),
+                F::InputScriptSigHash(Any),
+                F::IssuanceAssetAmount(Any),
+                F::IssuanceTokenAmount(Any),
+                F::IssuanceAssetProof(Any),
+                F::IssuanceTokenProof(Any),
+                F::IssuanceEntropy(Any),
+                F::NewIssuanceContract(Any),
+                F::ReissuanceBlinding(Any),
+                F::ReissuanceEntropy(Any),
+            ],
+            // ── Issuance readers ─────────────────────────────────────────
+            Elements::Issuance => vec![F::IssuancePresent(Any)],
+            Elements::IssuanceAsset => vec![F::IssuanceEntropy(Any)],
+            Elements::IssuanceAssetAmount => vec![F::IssuanceAssetAmount(Any)],
+            Elements::IssuanceAssetProof => vec![F::IssuanceAssetProof(Any)],
+            Elements::IssuanceEntropy => vec![F::IssuanceEntropy(Any)],
+            Elements::IssuanceToken => vec![F::IssuanceEntropy(Any)],
+            Elements::IssuanceTokenAmount => vec![F::IssuanceTokenAmount(Any)],
+            Elements::IssuanceTokenProof => vec![F::IssuanceTokenProof(Any)],
+            Elements::NewIssuanceContract => vec![F::NewIssuanceContract(Any)],
+            Elements::ReissuanceBlinding => vec![F::ReissuanceBlinding(Any)],
+            Elements::ReissuanceEntropy => vec![F::ReissuanceEntropy(Any)],
+            // ── Issuance aggregate hash jets ──────────────────────────────
+            Elements::IssuanceAssetAmountsHash => vec![F::IssuanceAssetAmount(Any)],
+            Elements::IssuanceTokenAmountsHash => vec![F::IssuanceTokenAmount(Any)],
+            Elements::IssuanceBlindingEntropyHash => {
+                vec![F::ReissuanceBlinding(Any), F::IssuanceEntropy(Any)]
+            }
+            Elements::IssuanceRangeProofsHash => {
+                vec![F::IssuanceAssetProof(Any), F::IssuanceTokenProof(Any)]
+            }
+            Elements::IssuanceHash => vec![
+                F::IssuanceAssetAmount(Any),
+                F::IssuanceTokenAmount(Any),
+                F::IssuanceAssetProof(Any),
+                F::IssuanceTokenProof(Any),
+                F::IssuanceEntropy(Any),
+                F::NewIssuanceContract(Any),
+                F::ReissuanceBlinding(Any),
+                F::ReissuanceEntropy(Any),
+            ],
+            Elements::IssuancesHash => vec![
+                F::IssuanceAssetAmount(Any),
+                F::IssuanceTokenAmount(Any),
+                F::IssuanceAssetProof(Any),
+                F::IssuanceTokenProof(Any),
+                F::IssuanceEntropy(Any),
+                F::NewIssuanceContract(Any),
+                F::ReissuanceBlinding(Any),
+                F::ReissuanceEntropy(Any),
+            ],
+            // ── Output readers ────────────────────────────────────────────
+            Elements::OutputAmount => vec![F::OutputAmount(OutputSelector::Any)],
+            Elements::OutputAsset => vec![F::OutputAsset(OutputSelector::Any)],
+            Elements::OutputIsFee => vec![F::OutputIsFee(OutputSelector::Any)],
+            Elements::OutputNonce => vec![F::OutputNonce(OutputSelector::Any)],
+            Elements::OutputNullDatum => vec![F::OutputNullDatum(OutputSelector::Any)],
+            Elements::OutputRangeProof => vec![F::OutputRangeProof(OutputSelector::Any)],
+            Elements::OutputScriptHash => vec![F::OutputScriptHash(OutputSelector::Any)],
+            Elements::OutputSurjectionProof => vec![F::OutputSurjectionProof(OutputSelector::Any)],
+            // ── Output aggregate hash jets ────────────────────────────────
+            Elements::AssetAmountHash => vec![
+                F::OutputAsset(OutputSelector::Any),
+                F::OutputAmount(OutputSelector::Any),
+            ],
+            Elements::NonceHash => vec![F::OutputNonce(OutputSelector::Any)],
+            Elements::OutputAmountsHash => vec![F::OutputAmount(OutputSelector::Any)],
+            Elements::OutputNoncesHash => vec![F::OutputNonce(OutputSelector::Any)],
+            Elements::OutputRangeProofsHash => vec![F::OutputRangeProof(OutputSelector::Any)],
+            Elements::OutputScriptsHash => vec![F::OutputScriptHash(OutputSelector::Any)],
+            Elements::OutputSurjectionProofsHash => {
+                vec![F::OutputSurjectionProof(OutputSelector::Any)]
+            }
+            Elements::OutputHash => vec![
+                F::OutputAsset(OutputSelector::Any),
+                F::OutputAmount(OutputSelector::Any),
+                F::OutputNonce(OutputSelector::Any),
+                F::OutputScriptHash(OutputSelector::Any),
+                F::OutputRangeProof(OutputSelector::Any),
+                F::OutputSurjectionProof(OutputSelector::Any),
+                F::OutputIsFee(OutputSelector::Any),
+                F::OutputNullDatum(OutputSelector::Any),
+            ],
+            Elements::OutputsHash => vec![
+                F::OutputAsset(OutputSelector::Any),
+                F::OutputAmount(OutputSelector::Any),
+                F::OutputNonce(OutputSelector::Any),
+                F::OutputScriptHash(OutputSelector::Any),
+                F::OutputRangeProof(OutputSelector::Any),
+                F::OutputSurjectionProof(OutputSelector::Any),
+                F::OutputIsFee(OutputSelector::Any),
+                F::OutputNullDatum(OutputSelector::Any),
+            ],
+            // ── Transaction-level readers ─────────────────────────────────
+            Elements::GenesisBlockHash => vec![F::GenesisBlockHash],
+            Elements::LbtcAsset => vec![F::LbtcAsset],
+            Elements::LockTime => vec![F::Locktime],
+            Elements::NumInputs => vec![F::InputCount],
+            Elements::NumOutputs => vec![F::OutputCount],
+            Elements::TotalFee => vec![
+                F::OutputIsFee(OutputSelector::Any),
+                F::OutputAmount(OutputSelector::Any),
+                F::TotalFee,
+            ],
+            Elements::Version => vec![F::Version],
+            // ── Lock-time / sequence readers ──────────────────────────────
+            Elements::TxIsFinal => vec![F::Version, F::Locktime, F::InputSequence(Any)],
+            Elements::TxLockDistance => vec![F::InputSequence(Any)],
+            Elements::TxLockDuration => vec![F::InputSequence(Any)],
+            Elements::TxLockHeight => vec![F::Locktime],
+            Elements::TxLockTime => vec![F::Locktime],
+            Elements::CheckLockDistance => vec![F::InputSequence(Current)],
+            Elements::CheckLockDuration => vec![F::InputSequence(Current)],
+            Elements::CheckLockHeight => vec![F::Locktime],
+            Elements::CheckLockTime => vec![F::Locktime],
+            // ── Taproot / script-context readers ──────────────────────────
+            Elements::InternalKey => vec![F::InternalKey],
+            Elements::ScriptCMR => vec![F::ScriptCmr],
+            Elements::TapleafVersion => vec![F::TapleafVersion],
+            Elements::Tappath => vec![F::Tappath],
+            Elements::TapdataInit => vec![F::TapleafVersion, F::InternalKey, F::ScriptCmr],
+            Elements::TapEnvHash => vec![F::TapleafVersion, F::InternalKey, F::Tappath, F::ScriptCmr],
+            Elements::TapleafHash => vec![F::TapleafVersion, F::ScriptCmr],
+            Elements::TappathHash => vec![F::Tappath],
+            // ── Full-transaction hash jets (denormalized) ─────────────────
+            // These jets commit to the entire transaction; all primitive fields
+            // are listed so malleability analysis sees full coverage.
+            Elements::SigAllHash | Elements::TxHash | Elements::TransactionId => vec![
+                F::Version,
+                F::Locktime,
+                F::InputCount,
+                F::OutputCount,
+                F::InputPrevOutpoint(Any),
+                F::InputSequence(Any),
+                F::InputAsset(Any),
+                F::InputAmount(Any),
+                F::InputAnnexHash(Any),
+                F::InputScriptHash(Any),
+                F::InputScriptSigHash(Any),
+                F::IssuanceAssetAmount(Any),
+                F::IssuanceTokenAmount(Any),
+                F::IssuanceAssetProof(Any),
+                F::IssuanceTokenProof(Any),
+                F::IssuanceEntropy(Any),
+                F::NewIssuanceContract(Any),
+                F::ReissuanceBlinding(Any),
+                F::ReissuanceEntropy(Any),
+                F::OutputAsset(OutputSelector::Any),
+                F::OutputAmount(OutputSelector::Any),
+                F::OutputNonce(OutputSelector::Any),
+                F::OutputScriptHash(OutputSelector::Any),
+                F::OutputRangeProof(OutputSelector::Any),
+                F::OutputSurjectionProof(OutputSelector::Any),
+                F::GenesisBlockHash,
+                F::TapleafVersion,
+                F::InternalKey,
+                F::ScriptCmr,
+            ],
+            // ── Pure computation / no environment access ──────────────────
+            _ => vec![],
+        }
+    }
+
+    fn has_write_effect(&self) -> bool {
+        matches!(
+            self,
+            Elements::Bip0340Verify
+                | Elements::CheckLockDistance
+                | Elements::CheckLockDuration
+                | Elements::CheckLockHeight
+                | Elements::CheckLockTime
+                | Elements::CheckSigVerify
+                | Elements::LinearVerify1
+                | Elements::PointVerify1
+                | Elements::Verify
+        )
+    }
 }
 
 impl fmt::Display for Elements {

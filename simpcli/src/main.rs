@@ -12,6 +12,7 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
+use simplicity::effects::{annotate_commit, malleability_analysis, missing_write_effects, BranchArm, TransactionField};
 use simplicity::human_encoding::Forest;
 use simplicity::node::CommitNode;
 use simplicity::{self, BitIter};
@@ -28,6 +29,7 @@ fn usage(process_name: &str) {
     eprintln!("Usage:");
     eprintln!("  {} assemble <filename>", process_name);
     eprintln!("  {} disassemble <base64>", process_name);
+    eprintln!("  {} effects <filename|base64>", process_name);
     eprintln!("  {} graph <base64>", process_name);
     eprintln!("  {} relabel <base64>", process_name);
     eprintln!();
@@ -44,6 +46,7 @@ fn invalid_usage(process_name: &str) -> Result<(), String> {
 enum Command {
     Assemble,
     Disassemble,
+    Effects,
     Graph,
     Relabel,
     Help,
@@ -55,6 +58,7 @@ impl FromStr for Command {
         match s {
             "assemble" => Ok(Command::Assemble),
             "disassemble" => Ok(Command::Disassemble),
+            "effects" => Ok(Command::Effects),
             "graphviz" | "dot" | "graph" => Ok(Command::Graph),
             "relabel" => Ok(Command::Relabel),
             "help" => Ok(Command::Help),
@@ -68,6 +72,7 @@ impl Command {
         match *self {
             Command::Assemble => false,
             Command::Disassemble => false,
+            Command::Effects => false,
             Command::Graph => false,
             Command::Relabel => false,
             Command::Help => false,
@@ -158,6 +163,65 @@ fn main() -> Result<(), String> {
                 CommitNode::decode(iter).map_err(|e| format!("failed to decode program: {}", e))?;
             let prog = Forest::<DefaultJet>::from_program(commit);
             println!("{}", prog.string_serialize());
+        }
+        Command::Effects => {
+            let commit = if std::path::Path::new(&first_arg).exists() {
+                let prog = parse_file(&first_arg)?;
+                match prog.roots().get("main") {
+                    Some(p) => p.to_commit_node(),
+                    None => return Err("expression `main` not found".into()),
+                }
+            } else {
+                let v = simplicity::base64::Engine::decode(&STANDARD, first_arg.as_bytes())
+                    .map_err(|e| format!("failed to parse base64: {}", e))?;
+                let iter = BitIter::from(v.into_iter());
+                CommitNode::<DefaultJet>::decode(iter)
+                    .map_err(|e| format!("failed to decode program: {}", e))?
+            };
+            let summaries = annotate_commit(&commit);
+            let root_summary = summaries.last().expect("non-empty program");
+            let missing = missing_write_effects(&commit, &summaries);
+            let universe = TransactionField::all_elements();
+            let malleability = malleability_analysis(&summaries, &universe);
+
+            // ── Root summary ──────────────────────────────────────────────
+            println!("=== Root summary ===");
+            println!("  can_fail:  {}", if root_summary.can_fail { "yes" } else { "no" });
+            if root_summary.reads.is_empty() {
+                println!("  reads:     (none)");
+            } else {
+                println!("  reads:");
+                for field in &root_summary.reads {
+                    println!("    {}", field);
+                }
+            }
+
+            // ── Missing write effects ─────────────────────────────────────
+            println!();
+            println!("=== Missing write effects ===");
+            if missing.is_empty() {
+                println!("  (none — every branch has a failure path)");
+            } else {
+                for m in &missing {
+                    let arm = match m.arm {
+                        BranchArm::Left => "left",
+                        BranchArm::Right => "right",
+                    };
+                    let note = if m.is_pure_unit { " (pure unit — completely inert)" } else { "" };
+                    println!("  node #{}: {} arm has no write effect{}", m.node_index, arm, note);
+                }
+            }
+
+            // ── Malleability ──────────────────────────────────────────────
+            println!();
+            println!("=== Malleability (uncovered fields) ===");
+            if malleability.uncovered.is_empty() {
+                println!("  (none — all fields are covered)");
+            } else {
+                for field in &malleability.uncovered {
+                    println!("  {}", field);
+                }
+            }
         }
         Command::Graph => {
             let v = simplicity::base64::Engine::decode(&STANDARD, first_arg.as_bytes())

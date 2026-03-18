@@ -28,6 +28,7 @@ use simplicity_sys::c_jets::frame_ffi::CFrameItem;
 
 use crate::analysis::Cost;
 use crate::decode;
+use crate::effects::TransactionField;
 use crate::jet::type_name::TypeName;
 use crate::merkle::cmr::Cmr;
 use crate::{BitIter, BitWriter};
@@ -87,6 +88,28 @@ pub trait Jet:
 
     /// Return the cost of the jet.
     fn cost(&self) -> Cost;
+
+    /// Return the set of primitive transaction fields this jet reads from the
+    /// environment.  Returns an empty `Vec` for jets that do not access the
+    /// environment (pure computation jets).
+    ///
+    /// High-level hash jets (e.g. `sig_all_hash`) should denormalize their
+    /// coverage into the full set of primitive fields they commit to, so that
+    /// callers can perform malleability analysis without needing to understand
+    /// the jet's internal semantics.
+    fn read_effects(&self) -> Vec<TransactionField> {
+        Vec::new()
+    }
+
+    /// Returns `true` if this jet can cause script failure.
+    ///
+    /// A jet has a write effect if its C implementation can return `false`
+    /// (e.g. signature-verification jets, lock-time-check jets).  Pure
+    /// computation jets always return `true` from C and therefore return
+    /// `false` here.
+    fn has_write_effect(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

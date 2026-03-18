@@ -88,6 +88,7 @@ mod macros;
 
 mod analysis;
 mod bit_encoding;
+pub mod effects;
 pub mod bit_machine;
 pub mod dag;
 pub mod human_encoding;

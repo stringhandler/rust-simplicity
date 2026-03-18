@@ -66,6 +66,13 @@ impl<J> std::hash::Hash for RedeemData<J> {
     }
 }
 
+impl<J> RedeemData<J> {
+    /// Accessor for the node's type arrow.
+    pub fn arrow(&self) -> &FinalArrow {
+        &self.arrow
+    }
+}
+
 impl<J: Jet> RedeemData<J> {
     pub fn new(arrow: FinalArrow, inner: Inner<&Arc<Self>, J, &Arc<Self>, Value>) -> Self {
         let (amr, imr, bounds) = match inner {
