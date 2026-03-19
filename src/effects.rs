@@ -641,6 +641,7 @@ impl fmt::Display for TransactionField {
 impl TransactionField {
     /// All Bitcoin transaction fields (no Elements extensions).
     pub fn all_bitcoin() -> BTreeSet<TransactionField> {
+        todo!("untested");
         use InputSelector::{All as AllIn, Current, Indexed};
         use OutputSelector::{All as AllOut, Indexed as IndexedOut};
         [
@@ -682,67 +683,47 @@ impl TransactionField {
     /// All Elements transaction fields (superset of Bitcoin).
     #[cfg(feature = "elements")]
     pub fn all_elements() -> BTreeSet<TransactionField> {
-        use InputSelector::{All as AllIn, Current, Indexed};
-        use OutputSelector::{All as AllOut, Indexed as IndexedOut};
-        let mut fields = Self::all_bitcoin();
+        use InputSelector::All as AllIn;
+        use OutputSelector::All as AllOut;
+        // let mut fields = Self::all_bitcoin();
+        let mut fields = vec![];
         fields.extend([
             TransactionField::GenesisBlockHash,
-            TransactionField::LbtcAsset,
-            TransactionField::InputAsset(Current),
-            TransactionField::InputAsset(Indexed),
-            TransactionField::InputAsset(AllIn),
-            TransactionField::InputAmount(Current),
-            TransactionField::InputAmount(Indexed),
-            TransactionField::InputAmount(AllIn),
-            TransactionField::InputPegin(Current),
-            TransactionField::InputPegin(Indexed),
+            TransactionField::Version,
+            TransactionField::Locktime,
+            // TransactionField::LbtcAsset,
+            TransactionField::InputPrevOutpoint(AllIn),
             TransactionField::InputPegin(AllIn),
-            TransactionField::InputScriptHash(Current),
-            TransactionField::InputScriptHash(Indexed),
-            TransactionField::InputScriptHash(AllIn),
-            TransactionField::IssuanceAssetAmount(Current),
-            TransactionField::IssuanceAssetAmount(Indexed),
-            TransactionField::IssuanceAssetAmount(AllIn),
-            TransactionField::IssuanceTokenAmount(Current),
-            TransactionField::IssuanceTokenAmount(Indexed),
-            TransactionField::IssuanceTokenAmount(AllIn),
-            TransactionField::IssuanceAssetProof(Current),
-            TransactionField::IssuanceAssetProof(Indexed),
-            TransactionField::IssuanceAssetProof(AllIn),
-            TransactionField::IssuanceTokenProof(Current),
-            TransactionField::IssuanceTokenProof(Indexed),
-            TransactionField::IssuanceTokenProof(AllIn),
-            TransactionField::IssuanceEntropy(Current),
-            TransactionField::IssuanceEntropy(Indexed),
-            TransactionField::IssuanceEntropy(AllIn),
-            TransactionField::IssuancePresent(Current),
-            TransactionField::IssuancePresent(Indexed),
-            TransactionField::IssuancePresent(AllIn),
-            TransactionField::NewIssuanceContract(Current),
-            TransactionField::NewIssuanceContract(Indexed),
-            TransactionField::NewIssuanceContract(AllIn),
-            TransactionField::ReissuanceBlinding(Current),
-            TransactionField::ReissuanceBlinding(Indexed),
-            TransactionField::ReissuanceBlinding(AllIn),
-            TransactionField::ReissuanceEntropy(Current),
-            TransactionField::ReissuanceEntropy(Indexed),
-            TransactionField::ReissuanceEntropy(AllIn),
-            TransactionField::OutputAsset(IndexedOut),
-            TransactionField::OutputAsset(AllOut),
-            TransactionField::OutputAmount(IndexedOut),
+            // TransactionField::InputAsset(Current),
+            // TransactionField::InputAsset(Indexed),
+            TransactionField::InputSequence(AllIn),
+            TransactionField::InputAnnexHash(AllIn),
             TransactionField::OutputAmount(AllOut),
-            TransactionField::OutputNonce(IndexedOut),
+            TransactionField::OutputAsset(AllOut),
             TransactionField::OutputNonce(AllOut),
-            TransactionField::OutputRangeProof(IndexedOut),
+            TransactionField::OutputScriptHash(AllOut),
             TransactionField::OutputRangeProof(AllOut),
-            TransactionField::OutputSurjectionProof(IndexedOut),
+            TransactionField::IssuancePresent(AllIn),
+            TransactionField::IssuanceAssetAmount(AllIn),
+            TransactionField::IssuanceTokenAmount(AllIn),
+            TransactionField::IssuanceTokenProof(AllIn),
+            TransactionField::IssuanceAssetProof(AllIn),
+            TransactionField::IssuancePresent(AllIn),
+            TransactionField::ReissuanceBlinding(AllIn),
+            TransactionField::NewIssuanceContract(AllIn),
+            TransactionField::IssuanceEntropy(AllIn),
+            TransactionField::ReissuanceEntropy(AllIn),
             TransactionField::OutputSurjectionProof(AllOut),
-            TransactionField::OutputIsFee(IndexedOut),
-            TransactionField::OutputIsFee(AllOut),
-            TransactionField::OutputNullDatum(IndexedOut),
-            TransactionField::OutputNullDatum(AllOut),
-            TransactionField::TotalFee,
+            TransactionField::InputAsset(AllIn),
+            TransactionField::InputAmount(AllIn),
+            TransactionField::InputScriptHash(AllIn),
+            // Tap env hash
+            TransactionField::TapleafVersion,
+            TransactionField::ScriptCmr,
+            TransactionField::Tappath,
+            TransactionField::InternalKey,
+            TransactionField::CurrentInputIndex,
         ]);
-        fields
+        fields.into_iter().collect()
     }
 }
