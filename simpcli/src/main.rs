@@ -13,6 +13,7 @@
 //
 
 use simplicity::dag::{DagLike, MaxSharing};
+use simplicity::jet::Jet;
 use simplicity::effects::{annotate_commit, malleability_analysis, missing_write_effects, BranchArm, TransactionField};
 use simplicity::human_encoding::Forest;
 use simplicity::node::{CommitNode, Inner};
@@ -239,6 +240,7 @@ fn main() -> Result<(), String> {
             // Collect node labels and edges in post-order.
             struct NodeInfo {
                 label: String,
+                self_fails: bool,
                 left: Option<usize>,
                 right: Option<usize>,
             }
@@ -247,23 +249,26 @@ fn main() -> Result<(), String> {
             for item in (&*commit).post_order_iter::<MaxSharing<simplicity::node::Commit<DefaultJet>>>() {
                 let summary = &summaries[item.index];
 
-                let type_name = match item.node.inner() {
-                    Inner::Iden => "iden".to_owned(),
-                    Inner::Unit => "unit".to_owned(),
-                    Inner::InjL(_) => "injL".to_owned(),
-                    Inner::InjR(_) => "injR".to_owned(),
-                    Inner::Take(_) => "take".to_owned(),
-                    Inner::Drop(_) => "drop".to_owned(),
-                    Inner::Comp(_, _) => "comp".to_owned(),
-                    Inner::Case(_, _) => "case".to_owned(),
-                    Inner::AssertL(_, _) => "assertL".to_owned(),
-                    Inner::AssertR(_, _) => "assertR".to_owned(),
-                    Inner::Pair(_, _) => "pair".to_owned(),
-                    Inner::Disconnect(_, _) => "disconnect".to_owned(),
-                    Inner::Witness(_) => "witness".to_owned(),
-                    Inner::Fail(_) => "fail".to_owned(),
-                    Inner::Word(w) => format!("const({}b)", w.len()),
-                    Inner::Jet(j) => format!("{}", j),
+                let (type_name, self_fails) = match item.node.inner() {
+                    Inner::Iden => ("iden".to_owned(), false),
+                    Inner::Unit => ("unit".to_owned(), false),
+                    Inner::InjL(_) => ("injL".to_owned(), false),
+                    Inner::InjR(_) => ("injR".to_owned(), false),
+                    Inner::Take(_) => ("take".to_owned(), false),
+                    Inner::Drop(_) => ("drop".to_owned(), false),
+                    Inner::Comp(_, _) => ("comp".to_owned(), false),
+                    Inner::Case(_, _) => ("case".to_owned(), false),
+                    Inner::AssertL(_, _) => ("assertL".to_owned(), true),
+                    Inner::AssertR(_, _) => ("assertR".to_owned(), true),
+                    Inner::Pair(_, _) => ("pair".to_owned(), false),
+                    Inner::Disconnect(_, _) => ("disconnect".to_owned(), false),
+                    Inner::Witness(_) => ("witness".to_owned(), false),
+                    Inner::Fail(_) => ("fail".to_owned(), true),
+                    Inner::Word(w) => (format!("const({}b)", w.len()), false),
+                    Inner::Jet(j) => {
+                        let sf = j.has_write_effect();
+                        (format!("{}", j), sf)
+                    }
                 };
 
                 // Type arrow for this node. Replace unicode × with * for safe display.
@@ -271,17 +276,16 @@ fn main() -> Result<(), String> {
                 let type_arrow = format!("{} -> {}", arrow.source, arrow.target)
                     .replace('×', "*");
 
-                // Effect badges: append can_fail and reads to the label.
-                let fail_badge = if summary.can_fail { "fail" } else { "ok" };
+                // Effect badges: append fail indicator and reads to the label.
+                let fail_badge = if summary.can_fail { "!!" } else { "infallible" };
                 let reads_line = if summary.reads.is_empty() {
                     String::new()
                 } else {
-                    let names: Vec<String> = summary.reads.iter().map(|f| format!("{}", f)).collect();
-                    format!("\n{}", names.join("\n"))
+                    format!("\nread {} fields", summary.reads.len())
                 };
-                let label = format!("{} {}\n{}{}", type_name, fail_badge, type_arrow, reads_line);
+                let label = format!("[{}] {} {}\n{}{}", item.index, type_name, fail_badge, type_arrow, reads_line);
 
-                nodes.push(NodeInfo { label, left: item.left_index, right: item.right_index });
+                nodes.push(NodeInfo { label, self_fails, left: item.left_index, right: item.right_index });
             }
 
             println!("flowchart TD");
@@ -296,6 +300,11 @@ fn main() -> Result<(), String> {
                 }
                 if let Some(r) = node.right {
                     println!("  N{} --> N{}", i, r);
+                }
+            }
+            for (i, node) in nodes.iter().enumerate() {
+                if node.self_fails {
+                    println!("  style N{} fill:#cc0000,color:#fff,stroke:#880000", i);
                 }
             }
         }

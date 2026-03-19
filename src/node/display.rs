@@ -312,10 +312,22 @@ impl<'a, M: Marker> DisplayAsGraph<'a, M> {
                 for data in self.node.post_order_iter::<S>() {
                     match data.node.inner() {
                         Inner::Case(..) => {
-                            writeln!(w, "  node{}{{\"{}\"}}", data.index, node_label(&data))?;
+                            writeln!(
+                                w,
+                                "  node{}{{\"[{}] {}\"}}",
+                                data.index,
+                                data.index,
+                                node_label(&data)
+                            )?;
                         }
                         _ => {
-                            writeln!(w, "  node{}[\"{}\"]", data.index, node_label(&data))?;
+                            writeln!(
+                                w,
+                                "  node{}[\"[{}] {}\"]",
+                                data.index,
+                                data.index,
+                                node_label(&data)
+                            )?;
                         }
                     }
 
