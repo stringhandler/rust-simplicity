@@ -1,17 +1,17 @@
 /* This file has been automatically generated. */
 
+use crate::analysis::Cost;
+use crate::decode_bits;
+use crate::jet::elements::ElementsEnv;
 use crate::jet::type_name::TypeName;
 use crate::jet::Jet;
 use crate::merkle::cmr::Cmr;
-use crate::decode_bits;
 use crate::{decode, BitIter, BitWriter};
-use crate::analysis::Cost;
 use hashes::sha256::Midstate;
+use simplicity_sys::CElementsTxEnv;
 use simplicity_sys::CFrameItem;
 use std::io::Write;
 use std::{fmt, str};
-use crate::jet::elements::ElementsEnv;
-use simplicity_sys::CElementsTxEnv;
 
 /// The Elements jet family.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -967,7 +967,6 @@ impl Elements {
 }
 
 impl Jet for Elements {
-
     type Environment = ElementsEnv<std::sync::Arc<elements::Transaction>>;
     type CJetEnvironment = CElementsTxEnv;
 
@@ -3830,8 +3829,12 @@ impl Jet for Elements {
             Elements::And32 => b"i",
             Elements::And64 => b"l",
             Elements::And8 => b"***22*22**22*22",
-            Elements::AnnexHash => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Elements::AssetAmountHash => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
+            Elements::AnnexHash => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Elements::AssetAmountHash => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
             Elements::Bip0340Verify => b"1",
             Elements::BuildTapbranch => b"h",
             Elements::BuildTapleafSimplicity => b"h",
@@ -4137,7 +4140,9 @@ impl Jet for Elements {
             Elements::Negate64 => b"*2l",
             Elements::Negate8 => b"*2***22*22**22*22",
             Elements::NewIssuanceContract => b"+1+1h",
-            Elements::NonceHash => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
+            Elements::NonceHash => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
             Elements::NumInputs => b"i",
             Elements::NumOutputs => b"i",
             Elements::One16 => b"****22*22**22*22***22*22**22*22",
@@ -4149,7 +4154,9 @@ impl Jet for Elements {
             Elements::Or32 => b"i",
             Elements::Or64 => b"l",
             Elements::Or8 => b"***22*22**22*22",
-            Elements::OutpointHash => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
+            Elements::OutpointHash => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
             Elements::OutputAmount => b"+1*+*2hh+*2hl",
             Elements::OutputAmountsHash => b"h",
             Elements::OutputAsset => b"+1+*2hh",
@@ -4166,7 +4173,9 @@ impl Jet for Elements {
             Elements::OutputSurjectionProofsHash => b"h",
             Elements::OutputsHash => b"h",
             Elements::ParseLock => b"+ii",
-            Elements::ParseSequence => b"+1+****22*22**22*22***22*22**22*22****22*22**22*22***22*22**22*22",
+            Elements::ParseSequence => {
+                b"+1+****22*22**22*22***22*22**22*22****22*22**22*22***22*22**22*22"
+            }
             Elements::PointVerify1 => b"1",
             Elements::ReissuanceBlinding => b"+1+1h",
             Elements::ReissuanceEntropy => b"+1+1h",
@@ -4237,19 +4246,43 @@ impl Jet for Elements {
             Elements::Scale => b"**hhh",
             Elements::ScriptCMR => b"h",
             Elements::Sha256Block => b"h",
-            Elements::Sha256Ctx8Add1 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Elements::Sha256Ctx8Add128 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Elements::Sha256Ctx8Add16 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Elements::Sha256Ctx8Add2 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Elements::Sha256Ctx8Add256 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Elements::Sha256Ctx8Add32 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Elements::Sha256Ctx8Add4 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Elements::Sha256Ctx8Add512 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Elements::Sha256Ctx8Add64 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Elements::Sha256Ctx8Add8 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Elements::Sha256Ctx8AddBuffer511 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
+            Elements::Sha256Ctx8Add1 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Elements::Sha256Ctx8Add128 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Elements::Sha256Ctx8Add16 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Elements::Sha256Ctx8Add2 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Elements::Sha256Ctx8Add256 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Elements::Sha256Ctx8Add32 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Elements::Sha256Ctx8Add4 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Elements::Sha256Ctx8Add512 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Elements::Sha256Ctx8Add64 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Elements::Sha256Ctx8Add8 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Elements::Sha256Ctx8AddBuffer511 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
             Elements::Sha256Ctx8Finalize => b"h",
-            Elements::Sha256Ctx8Init => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
+            Elements::Sha256Ctx8Init => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
             Elements::Sha256Iv => b"h",
             Elements::SigAllHash => b"h",
             Elements::Some1 => b"2",
@@ -4263,7 +4296,9 @@ impl Jet for Elements {
             Elements::Subtract8 => b"*2***22*22**22*22",
             Elements::Swu => b"*hh",
             Elements::TapEnvHash => b"h",
-            Elements::TapdataInit => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
+            Elements::TapdataInit => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
             Elements::TapleafHash => b"h",
             Elements::TapleafVersion => b"***22*22**22*22",
             Elements::Tappath => b"+1h",
@@ -7446,19 +7481,31 @@ impl Jet for Elements {
             Elements::AssetAmountHash => &simplicity_sys::c_jets::jets_wrapper::asset_amount_hash,
             Elements::Bip0340Verify => &simplicity_sys::c_jets::jets_wrapper::bip_0340_verify,
             Elements::BuildTapbranch => &simplicity_sys::c_jets::jets_wrapper::build_tapbranch,
-            Elements::BuildTapleafSimplicity => &simplicity_sys::c_jets::jets_wrapper::build_tapleaf_simplicity,
+            Elements::BuildTapleafSimplicity => {
+                &simplicity_sys::c_jets::jets_wrapper::build_tapleaf_simplicity
+            }
             Elements::BuildTaptweak => &simplicity_sys::c_jets::jets_wrapper::build_taptweak,
             Elements::CalculateAsset => &simplicity_sys::c_jets::jets_wrapper::calculate_asset,
-            Elements::CalculateConfidentialToken => &simplicity_sys::c_jets::jets_wrapper::calculate_confidential_token,
-            Elements::CalculateExplicitToken => &simplicity_sys::c_jets::jets_wrapper::calculate_explicit_token,
-            Elements::CalculateIssuanceEntropy => &simplicity_sys::c_jets::jets_wrapper::calculate_issuance_entropy,
+            Elements::CalculateConfidentialToken => {
+                &simplicity_sys::c_jets::jets_wrapper::calculate_confidential_token
+            }
+            Elements::CalculateExplicitToken => {
+                &simplicity_sys::c_jets::jets_wrapper::calculate_explicit_token
+            }
+            Elements::CalculateIssuanceEntropy => {
+                &simplicity_sys::c_jets::jets_wrapper::calculate_issuance_entropy
+            }
             Elements::Ch1 => &simplicity_sys::c_jets::jets_wrapper::ch_1,
             Elements::Ch16 => &simplicity_sys::c_jets::jets_wrapper::ch_16,
             Elements::Ch32 => &simplicity_sys::c_jets::jets_wrapper::ch_32,
             Elements::Ch64 => &simplicity_sys::c_jets::jets_wrapper::ch_64,
             Elements::Ch8 => &simplicity_sys::c_jets::jets_wrapper::ch_8,
-            Elements::CheckLockDistance => &simplicity_sys::c_jets::jets_wrapper::check_lock_distance,
-            Elements::CheckLockDuration => &simplicity_sys::c_jets::jets_wrapper::check_lock_duration,
+            Elements::CheckLockDistance => {
+                &simplicity_sys::c_jets::jets_wrapper::check_lock_distance
+            }
+            Elements::CheckLockDuration => {
+                &simplicity_sys::c_jets::jets_wrapper::check_lock_duration
+            }
             Elements::CheckLockHeight => &simplicity_sys::c_jets::jets_wrapper::check_lock_height,
             Elements::CheckLockTime => &simplicity_sys::c_jets::jets_wrapper::check_lock_time,
             Elements::CheckSigVerify => &simplicity_sys::c_jets::jets_wrapper::check_sig_verify,
@@ -7471,17 +7518,37 @@ impl Jet for Elements {
             Elements::CurrentAnnexHash => &simplicity_sys::c_jets::jets_wrapper::current_annex_hash,
             Elements::CurrentAsset => &simplicity_sys::c_jets::jets_wrapper::current_asset,
             Elements::CurrentIndex => &simplicity_sys::c_jets::jets_wrapper::current_index,
-            Elements::CurrentIssuanceAssetAmount => &simplicity_sys::c_jets::jets_wrapper::current_issuance_asset_amount,
-            Elements::CurrentIssuanceAssetProof => &simplicity_sys::c_jets::jets_wrapper::current_issuance_asset_proof,
-            Elements::CurrentIssuanceTokenAmount => &simplicity_sys::c_jets::jets_wrapper::current_issuance_token_amount,
-            Elements::CurrentIssuanceTokenProof => &simplicity_sys::c_jets::jets_wrapper::current_issuance_token_proof,
-            Elements::CurrentNewIssuanceContract => &simplicity_sys::c_jets::jets_wrapper::current_new_issuance_contract,
+            Elements::CurrentIssuanceAssetAmount => {
+                &simplicity_sys::c_jets::jets_wrapper::current_issuance_asset_amount
+            }
+            Elements::CurrentIssuanceAssetProof => {
+                &simplicity_sys::c_jets::jets_wrapper::current_issuance_asset_proof
+            }
+            Elements::CurrentIssuanceTokenAmount => {
+                &simplicity_sys::c_jets::jets_wrapper::current_issuance_token_amount
+            }
+            Elements::CurrentIssuanceTokenProof => {
+                &simplicity_sys::c_jets::jets_wrapper::current_issuance_token_proof
+            }
+            Elements::CurrentNewIssuanceContract => {
+                &simplicity_sys::c_jets::jets_wrapper::current_new_issuance_contract
+            }
             Elements::CurrentPegin => &simplicity_sys::c_jets::jets_wrapper::current_pegin,
-            Elements::CurrentPrevOutpoint => &simplicity_sys::c_jets::jets_wrapper::current_prev_outpoint,
-            Elements::CurrentReissuanceBlinding => &simplicity_sys::c_jets::jets_wrapper::current_reissuance_blinding,
-            Elements::CurrentReissuanceEntropy => &simplicity_sys::c_jets::jets_wrapper::current_reissuance_entropy,
-            Elements::CurrentScriptHash => &simplicity_sys::c_jets::jets_wrapper::current_script_hash,
-            Elements::CurrentScriptSigHash => &simplicity_sys::c_jets::jets_wrapper::current_script_sig_hash,
+            Elements::CurrentPrevOutpoint => {
+                &simplicity_sys::c_jets::jets_wrapper::current_prev_outpoint
+            }
+            Elements::CurrentReissuanceBlinding => {
+                &simplicity_sys::c_jets::jets_wrapper::current_reissuance_blinding
+            }
+            Elements::CurrentReissuanceEntropy => {
+                &simplicity_sys::c_jets::jets_wrapper::current_reissuance_entropy
+            }
+            Elements::CurrentScriptHash => {
+                &simplicity_sys::c_jets::jets_wrapper::current_script_hash
+            }
+            Elements::CurrentScriptSigHash => {
+                &simplicity_sys::c_jets::jets_wrapper::current_script_sig_hash
+            }
             Elements::CurrentSequence => &simplicity_sys::c_jets::jets_wrapper::current_sequence,
             Elements::Decompress => &simplicity_sys::c_jets::jets_wrapper::decompress,
             Elements::Decrement16 => &simplicity_sys::c_jets::jets_wrapper::decrement_16,
@@ -7529,46 +7596,118 @@ impl Jet for Elements {
             Elements::FullIncrement32 => &simplicity_sys::c_jets::jets_wrapper::full_increment_32,
             Elements::FullIncrement64 => &simplicity_sys::c_jets::jets_wrapper::full_increment_64,
             Elements::FullIncrement8 => &simplicity_sys::c_jets::jets_wrapper::full_increment_8,
-            Elements::FullLeftShift16_1 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_16_1,
-            Elements::FullLeftShift16_2 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_16_2,
-            Elements::FullLeftShift16_4 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_16_4,
-            Elements::FullLeftShift16_8 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_16_8,
-            Elements::FullLeftShift32_1 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_1,
-            Elements::FullLeftShift32_16 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_16,
-            Elements::FullLeftShift32_2 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_2,
-            Elements::FullLeftShift32_4 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_4,
-            Elements::FullLeftShift32_8 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_8,
-            Elements::FullLeftShift64_1 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_1,
-            Elements::FullLeftShift64_16 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_16,
-            Elements::FullLeftShift64_2 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_2,
-            Elements::FullLeftShift64_32 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_32,
-            Elements::FullLeftShift64_4 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_4,
-            Elements::FullLeftShift64_8 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_8,
-            Elements::FullLeftShift8_1 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_8_1,
-            Elements::FullLeftShift8_2 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_8_2,
-            Elements::FullLeftShift8_4 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_8_4,
+            Elements::FullLeftShift16_1 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_16_1
+            }
+            Elements::FullLeftShift16_2 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_16_2
+            }
+            Elements::FullLeftShift16_4 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_16_4
+            }
+            Elements::FullLeftShift16_8 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_16_8
+            }
+            Elements::FullLeftShift32_1 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_1
+            }
+            Elements::FullLeftShift32_16 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_16
+            }
+            Elements::FullLeftShift32_2 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_2
+            }
+            Elements::FullLeftShift32_4 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_4
+            }
+            Elements::FullLeftShift32_8 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_8
+            }
+            Elements::FullLeftShift64_1 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_1
+            }
+            Elements::FullLeftShift64_16 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_16
+            }
+            Elements::FullLeftShift64_2 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_2
+            }
+            Elements::FullLeftShift64_32 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_32
+            }
+            Elements::FullLeftShift64_4 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_4
+            }
+            Elements::FullLeftShift64_8 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_8
+            }
+            Elements::FullLeftShift8_1 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_8_1
+            }
+            Elements::FullLeftShift8_2 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_8_2
+            }
+            Elements::FullLeftShift8_4 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_8_4
+            }
             Elements::FullMultiply16 => &simplicity_sys::c_jets::jets_wrapper::full_multiply_16,
             Elements::FullMultiply32 => &simplicity_sys::c_jets::jets_wrapper::full_multiply_32,
             Elements::FullMultiply64 => &simplicity_sys::c_jets::jets_wrapper::full_multiply_64,
             Elements::FullMultiply8 => &simplicity_sys::c_jets::jets_wrapper::full_multiply_8,
-            Elements::FullRightShift16_1 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_1,
-            Elements::FullRightShift16_2 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_2,
-            Elements::FullRightShift16_4 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_4,
-            Elements::FullRightShift16_8 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_8,
-            Elements::FullRightShift32_1 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_1,
-            Elements::FullRightShift32_16 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_16,
-            Elements::FullRightShift32_2 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_2,
-            Elements::FullRightShift32_4 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_4,
-            Elements::FullRightShift32_8 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_8,
-            Elements::FullRightShift64_1 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_1,
-            Elements::FullRightShift64_16 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_16,
-            Elements::FullRightShift64_2 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_2,
-            Elements::FullRightShift64_32 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_32,
-            Elements::FullRightShift64_4 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_4,
-            Elements::FullRightShift64_8 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_8,
-            Elements::FullRightShift8_1 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_8_1,
-            Elements::FullRightShift8_2 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_8_2,
-            Elements::FullRightShift8_4 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_8_4,
+            Elements::FullRightShift16_1 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_1
+            }
+            Elements::FullRightShift16_2 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_2
+            }
+            Elements::FullRightShift16_4 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_4
+            }
+            Elements::FullRightShift16_8 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_8
+            }
+            Elements::FullRightShift32_1 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_1
+            }
+            Elements::FullRightShift32_16 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_16
+            }
+            Elements::FullRightShift32_2 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_2
+            }
+            Elements::FullRightShift32_4 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_4
+            }
+            Elements::FullRightShift32_8 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_8
+            }
+            Elements::FullRightShift64_1 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_1
+            }
+            Elements::FullRightShift64_16 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_16
+            }
+            Elements::FullRightShift64_2 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_2
+            }
+            Elements::FullRightShift64_32 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_32
+            }
+            Elements::FullRightShift64_4 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_4
+            }
+            Elements::FullRightShift64_8 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_8
+            }
+            Elements::FullRightShift8_1 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_8_1
+            }
+            Elements::FullRightShift8_2 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_8_2
+            }
+            Elements::FullRightShift8_4 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_8_4
+            }
             Elements::FullSubtract16 => &simplicity_sys::c_jets::jets_wrapper::full_subtract_16,
             Elements::FullSubtract32 => &simplicity_sys::c_jets::jets_wrapper::full_subtract_32,
             Elements::FullSubtract64 => &simplicity_sys::c_jets::jets_wrapper::full_subtract_64,
@@ -7607,15 +7746,25 @@ impl Jet for Elements {
             Elements::InputAnnexesHash => &simplicity_sys::c_jets::jets_wrapper::input_annexes_hash,
             Elements::InputAsset => &simplicity_sys::c_jets::jets_wrapper::input_asset,
             Elements::InputHash => &simplicity_sys::c_jets::jets_wrapper::input_hash,
-            Elements::InputOutpointsHash => &simplicity_sys::c_jets::jets_wrapper::input_outpoints_hash,
+            Elements::InputOutpointsHash => {
+                &simplicity_sys::c_jets::jets_wrapper::input_outpoints_hash
+            }
             Elements::InputPegin => &simplicity_sys::c_jets::jets_wrapper::input_pegin,
-            Elements::InputPrevOutpoint => &simplicity_sys::c_jets::jets_wrapper::input_prev_outpoint,
+            Elements::InputPrevOutpoint => {
+                &simplicity_sys::c_jets::jets_wrapper::input_prev_outpoint
+            }
             Elements::InputScriptHash => &simplicity_sys::c_jets::jets_wrapper::input_script_hash,
-            Elements::InputScriptSigHash => &simplicity_sys::c_jets::jets_wrapper::input_script_sig_hash,
-            Elements::InputScriptSigsHash => &simplicity_sys::c_jets::jets_wrapper::input_script_sigs_hash,
+            Elements::InputScriptSigHash => {
+                &simplicity_sys::c_jets::jets_wrapper::input_script_sig_hash
+            }
+            Elements::InputScriptSigsHash => {
+                &simplicity_sys::c_jets::jets_wrapper::input_script_sigs_hash
+            }
             Elements::InputScriptsHash => &simplicity_sys::c_jets::jets_wrapper::input_scripts_hash,
             Elements::InputSequence => &simplicity_sys::c_jets::jets_wrapper::input_sequence,
-            Elements::InputSequencesHash => &simplicity_sys::c_jets::jets_wrapper::input_sequences_hash,
+            Elements::InputSequencesHash => {
+                &simplicity_sys::c_jets::jets_wrapper::input_sequences_hash
+            }
             Elements::InputUtxoHash => &simplicity_sys::c_jets::jets_wrapper::input_utxo_hash,
             Elements::InputUtxosHash => &simplicity_sys::c_jets::jets_wrapper::input_utxos_hash,
             Elements::InputsHash => &simplicity_sys::c_jets::jets_wrapper::inputs_hash,
@@ -7630,17 +7779,33 @@ impl Jet for Elements {
             Elements::IsZero8 => &simplicity_sys::c_jets::jets_wrapper::is_zero_8,
             Elements::Issuance => &simplicity_sys::c_jets::jets_wrapper::issuance,
             Elements::IssuanceAsset => &simplicity_sys::c_jets::jets_wrapper::issuance_asset,
-            Elements::IssuanceAssetAmount => &simplicity_sys::c_jets::jets_wrapper::issuance_asset_amount,
-            Elements::IssuanceAssetAmountsHash => &simplicity_sys::c_jets::jets_wrapper::issuance_asset_amounts_hash,
-            Elements::IssuanceAssetProof => &simplicity_sys::c_jets::jets_wrapper::issuance_asset_proof,
-            Elements::IssuanceBlindingEntropyHash => &simplicity_sys::c_jets::jets_wrapper::issuance_blinding_entropy_hash,
+            Elements::IssuanceAssetAmount => {
+                &simplicity_sys::c_jets::jets_wrapper::issuance_asset_amount
+            }
+            Elements::IssuanceAssetAmountsHash => {
+                &simplicity_sys::c_jets::jets_wrapper::issuance_asset_amounts_hash
+            }
+            Elements::IssuanceAssetProof => {
+                &simplicity_sys::c_jets::jets_wrapper::issuance_asset_proof
+            }
+            Elements::IssuanceBlindingEntropyHash => {
+                &simplicity_sys::c_jets::jets_wrapper::issuance_blinding_entropy_hash
+            }
             Elements::IssuanceEntropy => &simplicity_sys::c_jets::jets_wrapper::issuance_entropy,
             Elements::IssuanceHash => &simplicity_sys::c_jets::jets_wrapper::issuance_hash,
-            Elements::IssuanceRangeProofsHash => &simplicity_sys::c_jets::jets_wrapper::issuance_range_proofs_hash,
+            Elements::IssuanceRangeProofsHash => {
+                &simplicity_sys::c_jets::jets_wrapper::issuance_range_proofs_hash
+            }
             Elements::IssuanceToken => &simplicity_sys::c_jets::jets_wrapper::issuance_token,
-            Elements::IssuanceTokenAmount => &simplicity_sys::c_jets::jets_wrapper::issuance_token_amount,
-            Elements::IssuanceTokenAmountsHash => &simplicity_sys::c_jets::jets_wrapper::issuance_token_amounts_hash,
-            Elements::IssuanceTokenProof => &simplicity_sys::c_jets::jets_wrapper::issuance_token_proof,
+            Elements::IssuanceTokenAmount => {
+                &simplicity_sys::c_jets::jets_wrapper::issuance_token_amount
+            }
+            Elements::IssuanceTokenAmountsHash => {
+                &simplicity_sys::c_jets::jets_wrapper::issuance_token_amounts_hash
+            }
+            Elements::IssuanceTokenProof => {
+                &simplicity_sys::c_jets::jets_wrapper::issuance_token_proof
+            }
             Elements::IssuancesHash => &simplicity_sys::c_jets::jets_wrapper::issuances_hash,
             Elements::LbtcAsset => &simplicity_sys::c_jets::jets_wrapper::lbtc_asset,
             Elements::Le16 => &simplicity_sys::c_jets::jets_wrapper::le_16,
@@ -7657,13 +7822,19 @@ impl Jet for Elements {
             Elements::LeftExtend8_16 => &simplicity_sys::c_jets::jets_wrapper::left_extend_8_16,
             Elements::LeftExtend8_32 => &simplicity_sys::c_jets::jets_wrapper::left_extend_8_32,
             Elements::LeftExtend8_64 => &simplicity_sys::c_jets::jets_wrapper::left_extend_8_64,
-            Elements::LeftPadHigh16_32 => &simplicity_sys::c_jets::jets_wrapper::left_pad_high_16_32,
-            Elements::LeftPadHigh16_64 => &simplicity_sys::c_jets::jets_wrapper::left_pad_high_16_64,
+            Elements::LeftPadHigh16_32 => {
+                &simplicity_sys::c_jets::jets_wrapper::left_pad_high_16_32
+            }
+            Elements::LeftPadHigh16_64 => {
+                &simplicity_sys::c_jets::jets_wrapper::left_pad_high_16_64
+            }
             Elements::LeftPadHigh1_16 => &simplicity_sys::c_jets::jets_wrapper::left_pad_high_1_16,
             Elements::LeftPadHigh1_32 => &simplicity_sys::c_jets::jets_wrapper::left_pad_high_1_32,
             Elements::LeftPadHigh1_64 => &simplicity_sys::c_jets::jets_wrapper::left_pad_high_1_64,
             Elements::LeftPadHigh1_8 => &simplicity_sys::c_jets::jets_wrapper::left_pad_high_1_8,
-            Elements::LeftPadHigh32_64 => &simplicity_sys::c_jets::jets_wrapper::left_pad_high_32_64,
+            Elements::LeftPadHigh32_64 => {
+                &simplicity_sys::c_jets::jets_wrapper::left_pad_high_32_64
+            }
             Elements::LeftPadHigh8_16 => &simplicity_sys::c_jets::jets_wrapper::left_pad_high_8_16,
             Elements::LeftPadHigh8_32 => &simplicity_sys::c_jets::jets_wrapper::left_pad_high_8_32,
             Elements::LeftPadHigh8_64 => &simplicity_sys::c_jets::jets_wrapper::left_pad_high_8_64,
@@ -7707,7 +7878,9 @@ impl Jet for Elements {
             Elements::Leftmost8_1 => &simplicity_sys::c_jets::jets_wrapper::leftmost_8_1,
             Elements::Leftmost8_2 => &simplicity_sys::c_jets::jets_wrapper::leftmost_8_2,
             Elements::Leftmost8_4 => &simplicity_sys::c_jets::jets_wrapper::leftmost_8_4,
-            Elements::LinearCombination1 => &simplicity_sys::c_jets::jets_wrapper::linear_combination_1,
+            Elements::LinearCombination1 => {
+                &simplicity_sys::c_jets::jets_wrapper::linear_combination_1
+            }
             Elements::LinearVerify1 => &simplicity_sys::c_jets::jets_wrapper::linear_verify_1,
             Elements::LockTime => &simplicity_sys::c_jets::jets_wrapper::lock_time,
             Elements::Low1 => &simplicity_sys::c_jets::jets_wrapper::low_1,
@@ -7748,7 +7921,9 @@ impl Jet for Elements {
             Elements::Negate32 => &simplicity_sys::c_jets::jets_wrapper::negate_32,
             Elements::Negate64 => &simplicity_sys::c_jets::jets_wrapper::negate_64,
             Elements::Negate8 => &simplicity_sys::c_jets::jets_wrapper::negate_8,
-            Elements::NewIssuanceContract => &simplicity_sys::c_jets::jets_wrapper::new_issuance_contract,
+            Elements::NewIssuanceContract => {
+                &simplicity_sys::c_jets::jets_wrapper::new_issuance_contract
+            }
             Elements::NonceHash => &simplicity_sys::c_jets::jets_wrapper::nonce_hash,
             Elements::NumInputs => &simplicity_sys::c_jets::jets_wrapper::num_inputs,
             Elements::NumOutputs => &simplicity_sys::c_jets::jets_wrapper::num_outputs,
@@ -7763,7 +7938,9 @@ impl Jet for Elements {
             Elements::Or8 => &simplicity_sys::c_jets::jets_wrapper::or_8,
             Elements::OutpointHash => &simplicity_sys::c_jets::jets_wrapper::outpoint_hash,
             Elements::OutputAmount => &simplicity_sys::c_jets::jets_wrapper::output_amount,
-            Elements::OutputAmountsHash => &simplicity_sys::c_jets::jets_wrapper::output_amounts_hash,
+            Elements::OutputAmountsHash => {
+                &simplicity_sys::c_jets::jets_wrapper::output_amounts_hash
+            }
             Elements::OutputAsset => &simplicity_sys::c_jets::jets_wrapper::output_asset,
             Elements::OutputHash => &simplicity_sys::c_jets::jets_wrapper::output_hash,
             Elements::OutputIsFee => &simplicity_sys::c_jets::jets_wrapper::output_is_fee,
@@ -7771,40 +7948,76 @@ impl Jet for Elements {
             Elements::OutputNoncesHash => &simplicity_sys::c_jets::jets_wrapper::output_nonces_hash,
             Elements::OutputNullDatum => &simplicity_sys::c_jets::jets_wrapper::output_null_datum,
             Elements::OutputRangeProof => &simplicity_sys::c_jets::jets_wrapper::output_range_proof,
-            Elements::OutputRangeProofsHash => &simplicity_sys::c_jets::jets_wrapper::output_range_proofs_hash,
+            Elements::OutputRangeProofsHash => {
+                &simplicity_sys::c_jets::jets_wrapper::output_range_proofs_hash
+            }
             Elements::OutputScriptHash => &simplicity_sys::c_jets::jets_wrapper::output_script_hash,
-            Elements::OutputScriptsHash => &simplicity_sys::c_jets::jets_wrapper::output_scripts_hash,
-            Elements::OutputSurjectionProof => &simplicity_sys::c_jets::jets_wrapper::output_surjection_proof,
-            Elements::OutputSurjectionProofsHash => &simplicity_sys::c_jets::jets_wrapper::output_surjection_proofs_hash,
+            Elements::OutputScriptsHash => {
+                &simplicity_sys::c_jets::jets_wrapper::output_scripts_hash
+            }
+            Elements::OutputSurjectionProof => {
+                &simplicity_sys::c_jets::jets_wrapper::output_surjection_proof
+            }
+            Elements::OutputSurjectionProofsHash => {
+                &simplicity_sys::c_jets::jets_wrapper::output_surjection_proofs_hash
+            }
             Elements::OutputsHash => &simplicity_sys::c_jets::jets_wrapper::outputs_hash,
             Elements::ParseLock => &simplicity_sys::c_jets::jets_wrapper::parse_lock,
             Elements::ParseSequence => &simplicity_sys::c_jets::jets_wrapper::parse_sequence,
             Elements::PointVerify1 => &simplicity_sys::c_jets::jets_wrapper::point_verify_1,
-            Elements::ReissuanceBlinding => &simplicity_sys::c_jets::jets_wrapper::reissuance_blinding,
-            Elements::ReissuanceEntropy => &simplicity_sys::c_jets::jets_wrapper::reissuance_entropy,
+            Elements::ReissuanceBlinding => {
+                &simplicity_sys::c_jets::jets_wrapper::reissuance_blinding
+            }
+            Elements::ReissuanceEntropy => {
+                &simplicity_sys::c_jets::jets_wrapper::reissuance_entropy
+            }
             Elements::RightExtend16_32 => &simplicity_sys::c_jets::jets_wrapper::right_extend_16_32,
             Elements::RightExtend16_64 => &simplicity_sys::c_jets::jets_wrapper::right_extend_16_64,
             Elements::RightExtend32_64 => &simplicity_sys::c_jets::jets_wrapper::right_extend_32_64,
             Elements::RightExtend8_16 => &simplicity_sys::c_jets::jets_wrapper::right_extend_8_16,
             Elements::RightExtend8_32 => &simplicity_sys::c_jets::jets_wrapper::right_extend_8_32,
             Elements::RightExtend8_64 => &simplicity_sys::c_jets::jets_wrapper::right_extend_8_64,
-            Elements::RightPadHigh16_32 => &simplicity_sys::c_jets::jets_wrapper::right_pad_high_16_32,
-            Elements::RightPadHigh16_64 => &simplicity_sys::c_jets::jets_wrapper::right_pad_high_16_64,
-            Elements::RightPadHigh1_16 => &simplicity_sys::c_jets::jets_wrapper::right_pad_high_1_16,
-            Elements::RightPadHigh1_32 => &simplicity_sys::c_jets::jets_wrapper::right_pad_high_1_32,
-            Elements::RightPadHigh1_64 => &simplicity_sys::c_jets::jets_wrapper::right_pad_high_1_64,
+            Elements::RightPadHigh16_32 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_pad_high_16_32
+            }
+            Elements::RightPadHigh16_64 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_pad_high_16_64
+            }
+            Elements::RightPadHigh1_16 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_pad_high_1_16
+            }
+            Elements::RightPadHigh1_32 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_pad_high_1_32
+            }
+            Elements::RightPadHigh1_64 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_pad_high_1_64
+            }
             Elements::RightPadHigh1_8 => &simplicity_sys::c_jets::jets_wrapper::right_pad_high_1_8,
-            Elements::RightPadHigh32_64 => &simplicity_sys::c_jets::jets_wrapper::right_pad_high_32_64,
-            Elements::RightPadHigh8_16 => &simplicity_sys::c_jets::jets_wrapper::right_pad_high_8_16,
-            Elements::RightPadHigh8_32 => &simplicity_sys::c_jets::jets_wrapper::right_pad_high_8_32,
-            Elements::RightPadHigh8_64 => &simplicity_sys::c_jets::jets_wrapper::right_pad_high_8_64,
-            Elements::RightPadLow16_32 => &simplicity_sys::c_jets::jets_wrapper::right_pad_low_16_32,
-            Elements::RightPadLow16_64 => &simplicity_sys::c_jets::jets_wrapper::right_pad_low_16_64,
+            Elements::RightPadHigh32_64 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_pad_high_32_64
+            }
+            Elements::RightPadHigh8_16 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_pad_high_8_16
+            }
+            Elements::RightPadHigh8_32 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_pad_high_8_32
+            }
+            Elements::RightPadHigh8_64 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_pad_high_8_64
+            }
+            Elements::RightPadLow16_32 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_pad_low_16_32
+            }
+            Elements::RightPadLow16_64 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_pad_low_16_64
+            }
             Elements::RightPadLow1_16 => &simplicity_sys::c_jets::jets_wrapper::right_pad_low_1_16,
             Elements::RightPadLow1_32 => &simplicity_sys::c_jets::jets_wrapper::right_pad_low_1_32,
             Elements::RightPadLow1_64 => &simplicity_sys::c_jets::jets_wrapper::right_pad_low_1_64,
             Elements::RightPadLow1_8 => &simplicity_sys::c_jets::jets_wrapper::right_pad_low_1_8,
-            Elements::RightPadLow32_64 => &simplicity_sys::c_jets::jets_wrapper::right_pad_low_32_64,
+            Elements::RightPadLow32_64 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_pad_low_32_64
+            }
             Elements::RightPadLow8_16 => &simplicity_sys::c_jets::jets_wrapper::right_pad_low_8_16,
             Elements::RightPadLow8_32 => &simplicity_sys::c_jets::jets_wrapper::right_pad_low_8_32,
             Elements::RightPadLow8_64 => &simplicity_sys::c_jets::jets_wrapper::right_pad_low_8_64,
@@ -7816,9 +8029,15 @@ impl Jet for Elements {
             Elements::RightShift32 => &simplicity_sys::c_jets::jets_wrapper::right_shift_32,
             Elements::RightShift64 => &simplicity_sys::c_jets::jets_wrapper::right_shift_64,
             Elements::RightShift8 => &simplicity_sys::c_jets::jets_wrapper::right_shift_8,
-            Elements::RightShiftWith16 => &simplicity_sys::c_jets::jets_wrapper::right_shift_with_16,
-            Elements::RightShiftWith32 => &simplicity_sys::c_jets::jets_wrapper::right_shift_with_32,
-            Elements::RightShiftWith64 => &simplicity_sys::c_jets::jets_wrapper::right_shift_with_64,
+            Elements::RightShiftWith16 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_shift_with_16
+            }
+            Elements::RightShiftWith32 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_shift_with_32
+            }
+            Elements::RightShiftWith64 => {
+                &simplicity_sys::c_jets::jets_wrapper::right_shift_with_64
+            }
             Elements::RightShiftWith8 => &simplicity_sys::c_jets::jets_wrapper::right_shift_with_8,
             Elements::Rightmost16_1 => &simplicity_sys::c_jets::jets_wrapper::rightmost_16_1,
             Elements::Rightmost16_2 => &simplicity_sys::c_jets::jets_wrapper::rightmost_16_2,
@@ -7842,7 +8061,9 @@ impl Jet for Elements {
             Elements::ScalarInvert => &simplicity_sys::c_jets::jets_wrapper::scalar_invert,
             Elements::ScalarIsZero => &simplicity_sys::c_jets::jets_wrapper::scalar_is_zero,
             Elements::ScalarMultiply => &simplicity_sys::c_jets::jets_wrapper::scalar_multiply,
-            Elements::ScalarMultiplyLambda => &simplicity_sys::c_jets::jets_wrapper::scalar_multiply_lambda,
+            Elements::ScalarMultiplyLambda => {
+                &simplicity_sys::c_jets::jets_wrapper::scalar_multiply_lambda
+            }
             Elements::ScalarNegate => &simplicity_sys::c_jets::jets_wrapper::scalar_negate,
             Elements::ScalarNormalize => &simplicity_sys::c_jets::jets_wrapper::scalar_normalize,
             Elements::ScalarSquare => &simplicity_sys::c_jets::jets_wrapper::scalar_square,
@@ -7850,17 +8071,33 @@ impl Jet for Elements {
             Elements::ScriptCMR => &simplicity_sys::c_jets::jets_wrapper::script_cmr,
             Elements::Sha256Block => &simplicity_sys::c_jets::jets_wrapper::sha_256_block,
             Elements::Sha256Ctx8Add1 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_1,
-            Elements::Sha256Ctx8Add128 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_128,
-            Elements::Sha256Ctx8Add16 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_16,
+            Elements::Sha256Ctx8Add128 => {
+                &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_128
+            }
+            Elements::Sha256Ctx8Add16 => {
+                &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_16
+            }
             Elements::Sha256Ctx8Add2 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_2,
-            Elements::Sha256Ctx8Add256 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_256,
-            Elements::Sha256Ctx8Add32 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_32,
+            Elements::Sha256Ctx8Add256 => {
+                &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_256
+            }
+            Elements::Sha256Ctx8Add32 => {
+                &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_32
+            }
             Elements::Sha256Ctx8Add4 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_4,
-            Elements::Sha256Ctx8Add512 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_512,
-            Elements::Sha256Ctx8Add64 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_64,
+            Elements::Sha256Ctx8Add512 => {
+                &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_512
+            }
+            Elements::Sha256Ctx8Add64 => {
+                &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_64
+            }
             Elements::Sha256Ctx8Add8 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_8,
-            Elements::Sha256Ctx8AddBuffer511 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_buffer_511,
-            Elements::Sha256Ctx8Finalize => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_finalize,
+            Elements::Sha256Ctx8AddBuffer511 => {
+                &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_buffer_511
+            }
+            Elements::Sha256Ctx8Finalize => {
+                &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_finalize
+            }
             Elements::Sha256Ctx8Init => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_init,
             Elements::Sha256Iv => &simplicity_sys::c_jets::jets_wrapper::sha_256_iv,
             Elements::SigAllHash => &simplicity_sys::c_jets::jets_wrapper::sig_all_hash,
@@ -8380,7 +8617,7 @@ impl Jet for Elements {
     }
 
     fn read_effects(&self) -> Vec<crate::effects::TransactionField> {
-        use crate::effects::InputSelector::{Any, Current};
+        use crate::effects::InputSelector::{Current, Indexed};
         use crate::effects::OutputSelector;
         use crate::effects::TransactionField as F;
         match self {
@@ -8401,149 +8638,151 @@ impl Jet for Elements {
             Elements::CurrentScriptHash => vec![F::InputScriptHash(Current)],
             Elements::CurrentScriptSigHash => vec![F::InputScriptSigHash(Current)],
             Elements::CurrentSequence => vec![F::InputSequence(Current)],
-            // ── Any-input readers ─────────────────────────────────────────
-            Elements::InputAmount => vec![F::InputAmount(Any)],
-            Elements::InputAnnexHash => vec![F::InputAnnexHash(Any)],
-            Elements::InputAsset => vec![F::InputAsset(Any)],
-            Elements::InputPegin => vec![F::InputPegin(Any)],
-            Elements::InputPrevOutpoint => vec![F::InputPrevOutpoint(Any)],
-            Elements::InputScriptHash => vec![F::InputScriptHash(Any)],
-            Elements::InputScriptSigHash => vec![F::InputScriptSigHash(Any)],
-            Elements::InputSequence => vec![F::InputSequence(Any)],
-            // ── Any-input aggregate hash jets ─────────────────────────────
-            Elements::AnnexHash => vec![F::InputAnnexHash(Any)],
-            Elements::InputAmountsHash => vec![F::InputAmount(Any)],
-            Elements::InputAnnexesHash => vec![F::InputAnnexHash(Any)],
-            Elements::InputOutpointsHash => vec![F::InputPrevOutpoint(Any)],
-            Elements::InputScriptSigsHash => vec![F::InputScriptSigHash(Any)],
-            Elements::InputScriptsHash => vec![F::InputScriptHash(Any)],
-            Elements::InputSequencesHash => vec![F::InputSequence(Any)],
+            // ── Indexed-input readers ─────────────────────────────────────
+            Elements::InputAmount => vec![F::InputAmount(Indexed)],
+            Elements::InputAnnexHash => vec![F::InputAnnexHash(Indexed)],
+            Elements::InputAsset => vec![F::InputAsset(Indexed)],
+            Elements::InputPegin => vec![F::InputPegin(Indexed)],
+            Elements::InputPrevOutpoint => vec![F::InputPrevOutpoint(Indexed)],
+            Elements::InputScriptHash => vec![F::InputScriptHash(Indexed)],
+            Elements::InputScriptSigHash => vec![F::InputScriptSigHash(Indexed)],
+            Elements::InputSequence => vec![F::InputSequence(Indexed)],
+            // ── Indexed-input aggregate hash jets ─────────────────────────
+            Elements::AnnexHash => vec![],
+            Elements::InputAmountsHash => vec![F::InputAmount(Indexed)],
+            Elements::InputAnnexesHash => vec![F::InputAnnexHash(Indexed)],
+            Elements::InputOutpointsHash => vec![F::InputPrevOutpoint(Indexed)],
+            Elements::InputScriptSigsHash => vec![F::InputScriptSigHash(Indexed)],
+            Elements::InputScriptsHash => vec![F::InputScriptHash(Indexed)],
+            Elements::InputSequencesHash => vec![F::InputSequence(Indexed)],
             Elements::InputUtxoHash => vec![
-                F::InputAsset(Any),
-                F::InputAmount(Any),
-                F::InputScriptHash(Any),
+                F::InputAsset(Indexed),
+                F::InputAmount(Indexed),
+                F::InputScriptHash(Indexed),
             ],
             Elements::InputUtxosHash => vec![
-                F::InputAsset(Any),
-                F::InputAmount(Any),
-                F::InputScriptHash(Any),
+                F::InputAsset(Indexed),
+                F::InputAmount(Indexed),
+                F::InputScriptHash(Indexed),
             ],
             Elements::InputHash => vec![
-                F::InputPrevOutpoint(Any),
-                F::InputSequence(Any),
-                F::InputAsset(Any),
-                F::InputAmount(Any),
-                F::InputAnnexHash(Any),
-                F::InputScriptHash(Any),
-                F::InputScriptSigHash(Any),
-                F::IssuanceAssetAmount(Any),
-                F::IssuanceTokenAmount(Any),
-                F::IssuanceAssetProof(Any),
-                F::IssuanceTokenProof(Any),
-                F::IssuanceEntropy(Any),
-                F::NewIssuanceContract(Any),
-                F::ReissuanceBlinding(Any),
-                F::ReissuanceEntropy(Any),
+                F::InputPrevOutpoint(Indexed),
+                F::InputSequence(Indexed),
+                F::InputAsset(Indexed),
+                F::InputAmount(Indexed),
+                F::InputAnnexHash(Indexed),
+                F::InputScriptHash(Indexed),
+                F::InputScriptSigHash(Indexed),
+                F::IssuanceAssetAmount(Indexed),
+                F::IssuanceTokenAmount(Indexed),
+                F::IssuanceAssetProof(Indexed),
+                F::IssuanceTokenProof(Indexed),
+                F::IssuanceEntropy(Indexed),
+                F::NewIssuanceContract(Indexed),
+                F::ReissuanceBlinding(Indexed),
+                F::ReissuanceEntropy(Indexed),
             ],
             Elements::InputsHash => vec![
-                F::InputPrevOutpoint(Any),
-                F::InputSequence(Any),
-                F::InputAsset(Any),
-                F::InputAmount(Any),
-                F::InputAnnexHash(Any),
-                F::InputScriptHash(Any),
-                F::InputScriptSigHash(Any),
-                F::IssuanceAssetAmount(Any),
-                F::IssuanceTokenAmount(Any),
-                F::IssuanceAssetProof(Any),
-                F::IssuanceTokenProof(Any),
-                F::IssuanceEntropy(Any),
-                F::NewIssuanceContract(Any),
-                F::ReissuanceBlinding(Any),
-                F::ReissuanceEntropy(Any),
+                F::InputPrevOutpoint(Indexed),
+                F::InputSequence(Indexed),
+                F::InputAsset(Indexed),
+                F::InputAmount(Indexed),
+                F::InputAnnexHash(Indexed),
+                F::InputScriptHash(Indexed),
+                F::InputScriptSigHash(Indexed),
+                F::IssuanceAssetAmount(Indexed),
+                F::IssuanceTokenAmount(Indexed),
+                F::IssuanceAssetProof(Indexed),
+                F::IssuanceTokenProof(Indexed),
+                F::IssuanceEntropy(Indexed),
+                F::NewIssuanceContract(Indexed),
+                F::ReissuanceBlinding(Indexed),
+                F::ReissuanceEntropy(Indexed),
             ],
             // ── Issuance readers ─────────────────────────────────────────
-            Elements::Issuance => vec![F::IssuancePresent(Any)],
-            Elements::IssuanceAsset => vec![F::IssuanceEntropy(Any)],
-            Elements::IssuanceAssetAmount => vec![F::IssuanceAssetAmount(Any)],
-            Elements::IssuanceAssetProof => vec![F::IssuanceAssetProof(Any)],
-            Elements::IssuanceEntropy => vec![F::IssuanceEntropy(Any)],
-            Elements::IssuanceToken => vec![F::IssuanceEntropy(Any)],
-            Elements::IssuanceTokenAmount => vec![F::IssuanceTokenAmount(Any)],
-            Elements::IssuanceTokenProof => vec![F::IssuanceTokenProof(Any)],
-            Elements::NewIssuanceContract => vec![F::NewIssuanceContract(Any)],
-            Elements::ReissuanceBlinding => vec![F::ReissuanceBlinding(Any)],
-            Elements::ReissuanceEntropy => vec![F::ReissuanceEntropy(Any)],
+            Elements::Issuance => vec![F::IssuancePresent(Indexed)],
+            Elements::IssuanceAsset => vec![F::IssuanceEntropy(Indexed)],
+            Elements::IssuanceAssetAmount => vec![F::IssuanceAssetAmount(Indexed)],
+            Elements::IssuanceAssetProof => vec![F::IssuanceAssetProof(Indexed)],
+            Elements::IssuanceEntropy => vec![F::IssuanceEntropy(Indexed)],
+            Elements::IssuanceToken => vec![F::IssuanceEntropy(Indexed)],
+            Elements::IssuanceTokenAmount => vec![F::IssuanceTokenAmount(Indexed)],
+            Elements::IssuanceTokenProof => vec![F::IssuanceTokenProof(Indexed)],
+            Elements::NewIssuanceContract => vec![F::NewIssuanceContract(Indexed)],
+            Elements::ReissuanceBlinding => vec![F::ReissuanceBlinding(Indexed)],
+            Elements::ReissuanceEntropy => vec![F::ReissuanceEntropy(Indexed)],
             // ── Issuance aggregate hash jets ──────────────────────────────
-            Elements::IssuanceAssetAmountsHash => vec![F::IssuanceAssetAmount(Any)],
-            Elements::IssuanceTokenAmountsHash => vec![F::IssuanceTokenAmount(Any)],
+            Elements::IssuanceAssetAmountsHash => vec![F::IssuanceAssetAmount(Indexed)],
+            Elements::IssuanceTokenAmountsHash => vec![F::IssuanceTokenAmount(Indexed)],
             Elements::IssuanceBlindingEntropyHash => {
-                vec![F::ReissuanceBlinding(Any), F::IssuanceEntropy(Any)]
+                vec![F::ReissuanceBlinding(Indexed), F::IssuanceEntropy(Indexed)]
             }
             Elements::IssuanceRangeProofsHash => {
-                vec![F::IssuanceAssetProof(Any), F::IssuanceTokenProof(Any)]
+                vec![F::IssuanceAssetProof(Indexed), F::IssuanceTokenProof(Indexed)]
             }
             Elements::IssuanceHash => vec![
-                F::IssuanceAssetAmount(Any),
-                F::IssuanceTokenAmount(Any),
-                F::IssuanceAssetProof(Any),
-                F::IssuanceTokenProof(Any),
-                F::IssuanceEntropy(Any),
-                F::NewIssuanceContract(Any),
-                F::ReissuanceBlinding(Any),
-                F::ReissuanceEntropy(Any),
+                F::IssuanceAssetAmount(Indexed),
+                F::IssuanceTokenAmount(Indexed),
+                F::IssuanceAssetProof(Indexed),
+                F::IssuanceTokenProof(Indexed),
+                F::IssuanceEntropy(Indexed),
+                F::NewIssuanceContract(Indexed),
+                F::ReissuanceBlinding(Indexed),
+                F::ReissuanceEntropy(Indexed),
             ],
             Elements::IssuancesHash => vec![
-                F::IssuanceAssetAmount(Any),
-                F::IssuanceTokenAmount(Any),
-                F::IssuanceAssetProof(Any),
-                F::IssuanceTokenProof(Any),
-                F::IssuanceEntropy(Any),
-                F::NewIssuanceContract(Any),
-                F::ReissuanceBlinding(Any),
-                F::ReissuanceEntropy(Any),
+                F::IssuanceAssetAmount(Indexed),
+                F::IssuanceTokenAmount(Indexed),
+                F::IssuanceAssetProof(Indexed),
+                F::IssuanceTokenProof(Indexed),
+                F::IssuanceEntropy(Indexed),
+                F::NewIssuanceContract(Indexed),
+                F::ReissuanceBlinding(Indexed),
+                F::ReissuanceEntropy(Indexed),
             ],
             // ── Output readers ────────────────────────────────────────────
-            Elements::OutputAmount => vec![F::OutputAmount(OutputSelector::Any)],
-            Elements::OutputAsset => vec![F::OutputAsset(OutputSelector::Any)],
-            Elements::OutputIsFee => vec![F::OutputIsFee(OutputSelector::Any)],
-            Elements::OutputNonce => vec![F::OutputNonce(OutputSelector::Any)],
-            Elements::OutputNullDatum => vec![F::OutputNullDatum(OutputSelector::Any)],
-            Elements::OutputRangeProof => vec![F::OutputRangeProof(OutputSelector::Any)],
-            Elements::OutputScriptHash => vec![F::OutputScriptHash(OutputSelector::Any)],
-            Elements::OutputSurjectionProof => vec![F::OutputSurjectionProof(OutputSelector::Any)],
+            Elements::OutputAmount => vec![F::OutputAmount(OutputSelector::Indexed)],
+            Elements::OutputAsset => vec![F::OutputAsset(OutputSelector::Indexed)],
+            Elements::OutputIsFee => vec![F::OutputIsFee(OutputSelector::Indexed)],
+            Elements::OutputNonce => vec![F::OutputNonce(OutputSelector::Indexed)],
+            Elements::OutputNullDatum => vec![F::OutputNullDatum(OutputSelector::Indexed)],
+            Elements::OutputRangeProof => vec![F::OutputRangeProof(OutputSelector::Indexed)],
+            Elements::OutputScriptHash => vec![F::OutputScriptHash(OutputSelector::Indexed)],
+            Elements::OutputSurjectionProof => {
+                vec![F::OutputSurjectionProof(OutputSelector::Indexed)]
+            }
             // ── Output aggregate hash jets ────────────────────────────────
             Elements::AssetAmountHash => vec![
-                F::OutputAsset(OutputSelector::Any),
-                F::OutputAmount(OutputSelector::Any),
+                F::OutputAsset(OutputSelector::Indexed),
+                F::OutputAmount(OutputSelector::Indexed),
             ],
-            Elements::NonceHash => vec![F::OutputNonce(OutputSelector::Any)],
-            Elements::OutputAmountsHash => vec![F::OutputAmount(OutputSelector::Any)],
-            Elements::OutputNoncesHash => vec![F::OutputNonce(OutputSelector::Any)],
-            Elements::OutputRangeProofsHash => vec![F::OutputRangeProof(OutputSelector::Any)],
-            Elements::OutputScriptsHash => vec![F::OutputScriptHash(OutputSelector::Any)],
+            Elements::NonceHash => vec![F::OutputNonce(OutputSelector::Indexed)],
+            Elements::OutputAmountsHash => vec![F::OutputAmount(OutputSelector::Indexed)],
+            Elements::OutputNoncesHash => vec![F::OutputNonce(OutputSelector::Indexed)],
+            Elements::OutputRangeProofsHash => vec![F::OutputRangeProof(OutputSelector::Indexed)],
+            Elements::OutputScriptsHash => vec![F::OutputScriptHash(OutputSelector::Indexed)],
             Elements::OutputSurjectionProofsHash => {
-                vec![F::OutputSurjectionProof(OutputSelector::Any)]
+                vec![F::OutputSurjectionProof(OutputSelector::Indexed)]
             }
             Elements::OutputHash => vec![
-                F::OutputAsset(OutputSelector::Any),
-                F::OutputAmount(OutputSelector::Any),
-                F::OutputNonce(OutputSelector::Any),
-                F::OutputScriptHash(OutputSelector::Any),
-                F::OutputRangeProof(OutputSelector::Any),
-                F::OutputSurjectionProof(OutputSelector::Any),
-                F::OutputIsFee(OutputSelector::Any),
-                F::OutputNullDatum(OutputSelector::Any),
+                F::OutputAsset(OutputSelector::Indexed),
+                F::OutputAmount(OutputSelector::Indexed),
+                F::OutputNonce(OutputSelector::Indexed),
+                F::OutputScriptHash(OutputSelector::Indexed),
+                F::OutputRangeProof(OutputSelector::Indexed),
+                F::OutputSurjectionProof(OutputSelector::Indexed),
+                F::OutputIsFee(OutputSelector::Indexed),
+                F::OutputNullDatum(OutputSelector::Indexed),
             ],
             Elements::OutputsHash => vec![
-                F::OutputAsset(OutputSelector::Any),
-                F::OutputAmount(OutputSelector::Any),
-                F::OutputNonce(OutputSelector::Any),
-                F::OutputScriptHash(OutputSelector::Any),
-                F::OutputRangeProof(OutputSelector::Any),
-                F::OutputSurjectionProof(OutputSelector::Any),
-                F::OutputIsFee(OutputSelector::Any),
-                F::OutputNullDatum(OutputSelector::Any),
+                F::OutputAsset(OutputSelector::Indexed),
+                F::OutputAmount(OutputSelector::Indexed),
+                F::OutputNonce(OutputSelector::Indexed),
+                F::OutputScriptHash(OutputSelector::Indexed),
+                F::OutputRangeProof(OutputSelector::Indexed),
+                F::OutputSurjectionProof(OutputSelector::Indexed),
+                F::OutputIsFee(OutputSelector::Indexed),
+                F::OutputNullDatum(OutputSelector::Indexed),
             ],
             // ── Transaction-level readers ─────────────────────────────────
             Elements::GenesisBlockHash => vec![F::GenesisBlockHash],
@@ -8552,15 +8791,15 @@ impl Jet for Elements {
             Elements::NumInputs => vec![F::InputCount],
             Elements::NumOutputs => vec![F::OutputCount],
             Elements::TotalFee => vec![
-                F::OutputIsFee(OutputSelector::Any),
-                F::OutputAmount(OutputSelector::Any),
+                F::OutputIsFee(OutputSelector::Indexed),
+                F::OutputAmount(OutputSelector::Indexed),
                 F::TotalFee,
             ],
             Elements::Version => vec![F::Version],
             // ── Lock-time / sequence readers ──────────────────────────────
-            Elements::TxIsFinal => vec![F::Version, F::Locktime, F::InputSequence(Any)],
-            Elements::TxLockDistance => vec![F::InputSequence(Any)],
-            Elements::TxLockDuration => vec![F::InputSequence(Any)],
+            Elements::TxIsFinal => vec![F::Version, F::Locktime, F::InputSequence(Indexed)],
+            Elements::TxLockDistance => vec![F::InputSequence(Indexed)],
+            Elements::TxLockDuration => vec![F::InputSequence(Indexed)],
             Elements::TxLockHeight => vec![F::Locktime],
             Elements::TxLockTime => vec![F::Locktime],
             Elements::CheckLockDistance => vec![F::InputSequence(Current)],
@@ -8573,38 +8812,71 @@ impl Jet for Elements {
             Elements::TapleafVersion => vec![F::TapleafVersion],
             Elements::Tappath => vec![F::Tappath],
             Elements::TapdataInit => vec![F::TapleafVersion, F::InternalKey, F::ScriptCmr],
-            Elements::TapEnvHash => vec![F::TapleafVersion, F::InternalKey, F::Tappath, F::ScriptCmr],
+            Elements::TapEnvHash => {
+                vec![F::TapleafVersion, F::InternalKey, F::Tappath, F::ScriptCmr]
+            }
             Elements::TapleafHash => vec![F::TapleafVersion, F::ScriptCmr],
             Elements::TappathHash => vec![F::Tappath],
             // ── Full-transaction hash jets (denormalized) ─────────────────
             // These jets commit to the entire transaction; all primitive fields
             // are listed so malleability analysis sees full coverage.
-            Elements::SigAllHash | Elements::TxHash | Elements::TransactionId => vec![
+            Elements::TxHash => vec![
                 F::Version,
                 F::Locktime,
                 F::InputCount,
                 F::OutputCount,
-                F::InputPrevOutpoint(Any),
-                F::InputSequence(Any),
-                F::InputAsset(Any),
-                F::InputAmount(Any),
-                F::InputAnnexHash(Any),
-                F::InputScriptHash(Any),
-                F::InputScriptSigHash(Any),
-                F::IssuanceAssetAmount(Any),
-                F::IssuanceTokenAmount(Any),
-                F::IssuanceAssetProof(Any),
-                F::IssuanceTokenProof(Any),
-                F::IssuanceEntropy(Any),
-                F::NewIssuanceContract(Any),
-                F::ReissuanceBlinding(Any),
-                F::ReissuanceEntropy(Any),
-                F::OutputAsset(OutputSelector::Any),
-                F::OutputAmount(OutputSelector::Any),
-                F::OutputNonce(OutputSelector::Any),
-                F::OutputScriptHash(OutputSelector::Any),
-                F::OutputRangeProof(OutputSelector::Any),
-                F::OutputSurjectionProof(OutputSelector::Any),
+                F::InputPrevOutpoint(Indexed),
+                F::InputSequence(Indexed),
+                F::InputAsset(Indexed),
+                F::InputAmount(Indexed),
+                F::InputAnnexHash(Indexed),
+                F::InputScriptHash(Indexed),
+                F::InputScriptSigHash(Indexed),
+                F::IssuanceAssetAmount(Indexed),
+                F::IssuanceTokenAmount(Indexed),
+                F::IssuanceAssetProof(Indexed),
+                F::IssuanceTokenProof(Indexed),
+                F::IssuanceEntropy(Indexed),
+                F::NewIssuanceContract(Indexed),
+                F::ReissuanceBlinding(Indexed),
+                F::ReissuanceEntropy(Indexed),
+                F::OutputAsset(OutputSelector::Indexed),
+                F::OutputAmount(OutputSelector::Indexed),
+                F::OutputNonce(OutputSelector::Indexed),
+                F::OutputScriptHash(OutputSelector::Indexed),
+                F::OutputRangeProof(OutputSelector::Indexed),
+                F::OutputSurjectionProof(OutputSelector::Indexed),
+                F::TapleafVersion,
+                F::InternalKey,
+                F::ScriptCmr,
+            ],
+
+            Elements::SigAllHash | Elements::TransactionId => vec![
+                F::Version,
+                F::Locktime,
+                F::InputCount,
+                F::OutputCount,
+                F::InputPrevOutpoint(Indexed),
+                F::InputSequence(Indexed),
+                F::InputAsset(Indexed),
+                F::InputAmount(Indexed),
+                F::InputAnnexHash(Indexed),
+                F::InputScriptHash(Indexed),
+                F::InputScriptSigHash(Indexed),
+                F::IssuanceAssetAmount(Indexed),
+                F::IssuanceTokenAmount(Indexed),
+                F::IssuanceAssetProof(Indexed),
+                F::IssuanceTokenProof(Indexed),
+                F::IssuanceEntropy(Indexed),
+                F::NewIssuanceContract(Indexed),
+                F::ReissuanceBlinding(Indexed),
+                F::ReissuanceEntropy(Indexed),
+                F::OutputAsset(OutputSelector::Indexed),
+                F::OutputAmount(OutputSelector::Indexed),
+                F::OutputNonce(OutputSelector::Indexed),
+                F::OutputScriptHash(OutputSelector::Indexed),
+                F::OutputRangeProof(OutputSelector::Indexed),
+                F::OutputSurjectionProof(OutputSelector::Indexed),
                 F::GenesisBlockHash,
                 F::TapleafVersion,
                 F::InternalKey,

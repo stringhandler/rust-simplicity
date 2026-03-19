@@ -4485,7 +4485,7 @@ impl Jet for Bitcoin {
     }
 
     fn read_effects(&self) -> Vec<crate::effects::TransactionField> {
-        use crate::effects::InputSelector::{Any, Current};
+        use crate::effects::InputSelector::{Current, Indexed};
         use crate::effects::OutputSelector;
         use crate::effects::TransactionField as F;
         match self {
@@ -4496,15 +4496,15 @@ impl Jet for Bitcoin {
             Bitcoin::CurrentScriptSigHash => vec![F::InputScriptSigHash(Current)],
             Bitcoin::CurrentSequence => vec![F::InputSequence(Current)],
             Bitcoin::CurrentValue => vec![F::InputValue(Current)],
-            // ── Any-input readers ─────────────────────────────────────────
-            Bitcoin::InputAnnexHash => vec![F::InputAnnexHash(Any)],
-            Bitcoin::InputPrevOutpoint => vec![F::InputPrevOutpoint(Any)],
-            Bitcoin::InputScriptSigHash => vec![F::InputScriptSigHash(Any)],
-            Bitcoin::InputSequence => vec![F::InputSequence(Any)],
-            Bitcoin::InputValue => vec![F::InputValue(Any)],
+            // ── Indexed-input readers ─────────────────────────────────────
+            Bitcoin::InputAnnexHash => vec![F::InputAnnexHash(Indexed)],
+            Bitcoin::InputPrevOutpoint => vec![F::InputPrevOutpoint(Indexed)],
+            Bitcoin::InputScriptSigHash => vec![F::InputScriptSigHash(Indexed)],
+            Bitcoin::InputSequence => vec![F::InputSequence(Indexed)],
+            Bitcoin::InputValue => vec![F::InputValue(Indexed)],
             // ── Output readers ────────────────────────────────────────────
-            Bitcoin::OutputValue => vec![F::OutputValue(OutputSelector::Any)],
-            Bitcoin::OutputScriptHash => vec![F::OutputScriptHash(OutputSelector::Any)],
+            Bitcoin::OutputValue => vec![F::OutputValue(OutputSelector::Indexed)],
+            Bitcoin::OutputScriptHash => vec![F::OutputScriptHash(OutputSelector::Indexed)],
             // ── Transaction-level readers ─────────────────────────────────
             Bitcoin::LockTime => vec![F::Locktime],
             Bitcoin::NumInputs => vec![F::InputCount],
@@ -4512,12 +4512,12 @@ impl Jet for Bitcoin {
             Bitcoin::Version => vec![F::Version],
             // ── Aggregate readers ─────────────────────────────────────────
             // Both read all input / output values respectively.
-            Bitcoin::TotalInputValue => vec![F::InputValue(Any), F::TotalInputValue],
-            Bitcoin::TotalOutputValue => vec![F::OutputValue(OutputSelector::Any), F::TotalOutputValue],
+            Bitcoin::TotalInputValue => vec![F::InputValue(Indexed), F::TotalInputValue],
+            Bitcoin::TotalOutputValue => vec![F::OutputValue(OutputSelector::Indexed), F::TotalOutputValue],
             // ── Lock-time / sequence readers ──────────────────────────────
-            Bitcoin::TxIsFinal => vec![F::Version, F::Locktime, F::InputSequence(Any)],
-            Bitcoin::TxLockDistance => vec![F::InputSequence(Any)],
-            Bitcoin::TxLockDuration => vec![F::InputSequence(Any)],
+            Bitcoin::TxIsFinal => vec![F::Version, F::Locktime, F::InputSequence(Indexed)],
+            Bitcoin::TxLockDistance => vec![F::InputSequence(Indexed)],
+            Bitcoin::TxLockDuration => vec![F::InputSequence(Indexed)],
             Bitcoin::TxLockHeight => vec![F::Locktime],
             Bitcoin::TxLockTime => vec![F::Locktime],
             // CheckLock* jets also read the environment (and have a write effect).

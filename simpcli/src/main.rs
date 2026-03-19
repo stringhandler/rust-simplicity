@@ -12,9 +12,10 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
+use simplicity::dag::{DagLike, MaxSharing};
 use simplicity::effects::{annotate_commit, malleability_analysis, missing_write_effects, BranchArm, TransactionField};
 use simplicity::human_encoding::Forest;
-use simplicity::node::CommitNode;
+use simplicity::node::{CommitNode, Inner};
 use simplicity::{self, BitIter};
 
 use simplicity::base64::engine::general_purpose::STANDARD;
@@ -30,6 +31,7 @@ fn usage(process_name: &str) {
     eprintln!("  {} assemble <filename>", process_name);
     eprintln!("  {} disassemble <base64>", process_name);
     eprintln!("  {} effects <filename|base64>", process_name);
+    eprintln!("  {} mermaid <filename|base64>", process_name);
     eprintln!("  {} graph <base64>", process_name);
     eprintln!("  {} relabel <base64>", process_name);
     eprintln!();
@@ -48,6 +50,7 @@ enum Command {
     Disassemble,
     Effects,
     Graph,
+    Mermaid,
     Relabel,
     Help,
 }
@@ -59,6 +62,7 @@ impl FromStr for Command {
             "assemble" => Ok(Command::Assemble),
             "disassemble" => Ok(Command::Disassemble),
             "effects" => Ok(Command::Effects),
+            "mermaid" => Ok(Command::Mermaid),
             "graphviz" | "dot" | "graph" => Ok(Command::Graph),
             "relabel" => Ok(Command::Relabel),
             "help" => Ok(Command::Help),
@@ -74,9 +78,26 @@ impl Command {
             Command::Disassemble => false,
             Command::Effects => false,
             Command::Graph => false,
+            Command::Mermaid => false,
             Command::Relabel => false,
             Command::Help => false,
         }
+    }
+}
+
+/// Parse a program from either a .simpl file path or a base64 string.
+fn parse_commit(arg: &str) -> Result<std::sync::Arc<CommitNode<DefaultJet>>, String> {
+    if std::path::Path::new(arg).exists() {
+        let prog = parse_file(arg)?;
+        match prog.roots().get("main") {
+            Some(p) => Ok(p.to_commit_node()),
+            None => Err("expression `main` not found".into()),
+        }
+    } else {
+        let v = simplicity::base64::Engine::decode(&STANDARD, arg.as_bytes())
+            .map_err(|e| format!("failed to parse base64: {}", e))?;
+        let iter = BitIter::from(v.into_iter());
+        CommitNode::<DefaultJet>::decode(iter).map_err(|e| format!("failed to decode program: {}", e))
     }
 }
 
@@ -165,19 +186,7 @@ fn main() -> Result<(), String> {
             println!("{}", prog.string_serialize());
         }
         Command::Effects => {
-            let commit = if std::path::Path::new(&first_arg).exists() {
-                let prog = parse_file(&first_arg)?;
-                match prog.roots().get("main") {
-                    Some(p) => p.to_commit_node(),
-                    None => return Err("expression `main` not found".into()),
-                }
-            } else {
-                let v = simplicity::base64::Engine::decode(&STANDARD, first_arg.as_bytes())
-                    .map_err(|e| format!("failed to parse base64: {}", e))?;
-                let iter = BitIter::from(v.into_iter());
-                CommitNode::<DefaultJet>::decode(iter)
-                    .map_err(|e| format!("failed to decode program: {}", e))?
-            };
+            let commit = parse_commit(&first_arg)?;
             let summaries = annotate_commit(&commit);
             let root_summary = summaries.last().expect("non-empty program");
             let missing = missing_write_effects(&commit, &summaries);
@@ -220,6 +229,73 @@ fn main() -> Result<(), String> {
             } else {
                 for field in &malleability.uncovered {
                     println!("  {}", field);
+                }
+            }
+        }
+        Command::Mermaid => {
+            let commit = parse_commit(&first_arg)?;
+            let summaries = annotate_commit(&commit);
+
+            // Collect node labels and edges in post-order.
+            struct NodeInfo {
+                label: String,
+                left: Option<usize>,
+                right: Option<usize>,
+            }
+            let mut nodes: Vec<NodeInfo> = Vec::new();
+
+            for item in (&*commit).post_order_iter::<MaxSharing<simplicity::node::Commit<DefaultJet>>>() {
+                let summary = &summaries[item.index];
+
+                let type_name = match item.node.inner() {
+                    Inner::Iden => "iden".to_owned(),
+                    Inner::Unit => "unit".to_owned(),
+                    Inner::InjL(_) => "injL".to_owned(),
+                    Inner::InjR(_) => "injR".to_owned(),
+                    Inner::Take(_) => "take".to_owned(),
+                    Inner::Drop(_) => "drop".to_owned(),
+                    Inner::Comp(_, _) => "comp".to_owned(),
+                    Inner::Case(_, _) => "case".to_owned(),
+                    Inner::AssertL(_, _) => "assertL".to_owned(),
+                    Inner::AssertR(_, _) => "assertR".to_owned(),
+                    Inner::Pair(_, _) => "pair".to_owned(),
+                    Inner::Disconnect(_, _) => "disconnect".to_owned(),
+                    Inner::Witness(_) => "witness".to_owned(),
+                    Inner::Fail(_) => "fail".to_owned(),
+                    Inner::Word(w) => format!("const({}b)", w.len()),
+                    Inner::Jet(j) => format!("{}", j),
+                };
+
+                // Type arrow for this node. Replace unicode × with * for safe display.
+                let arrow = item.node.cached_data().arrow();
+                let type_arrow = format!("{} -> {}", arrow.source, arrow.target)
+                    .replace('×', "*");
+
+                // Effect badges: append can_fail and reads to the label.
+                let fail_badge = if summary.can_fail { "fail" } else { "ok" };
+                let reads_line = if summary.reads.is_empty() {
+                    String::new()
+                } else {
+                    let names: Vec<String> = summary.reads.iter().map(|f| format!("{}", f)).collect();
+                    format!("\n{}", names.join("\n"))
+                };
+                let label = format!("{} {}\n{}{}", type_name, fail_badge, type_arrow, reads_line);
+
+                nodes.push(NodeInfo { label, left: item.left_index, right: item.right_index });
+            }
+
+            println!("flowchart TD");
+            for (i, node) in nodes.iter().enumerate() {
+                // Escape quotes and newlines for Mermaid node labels.
+                let escaped = node.label.replace('"', "#quot;").replace('\n', "<br/>");
+                println!("  N{}[\"{}\"]", i, escaped);
+            }
+            for (i, node) in nodes.iter().enumerate() {
+                if let Some(l) = node.left {
+                    println!("  N{} --> N{}", i, l);
+                }
+                if let Some(r) = node.right {
+                    println!("  N{} --> N{}", i, r);
                 }
             }
         }

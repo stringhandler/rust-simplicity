@@ -25,15 +25,19 @@ use crate::types::arrow::FinalArrow;
 pub enum InputSelector {
     /// The current input (the one being spent).
     Current,
-    /// Any input, selected by index at runtime.
-    Any,
+    /// A specific input, selected by index at runtime.
+    Indexed,
+    /// All inputs.
+    All,
 }
 
 /// Selects which output a field refers to.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum OutputSelector {
-    /// Any output, selected by index at runtime.
-    Any,
+    /// A specific output, selected by index at runtime.
+    Indexed,
+    /// All outputs.
+    All,
 }
 
 /// A primitive transaction field that a jet may read from its environment.
@@ -256,7 +260,11 @@ where
                 let reads: BTreeSet<TransactionField> = j.read_effects().into_iter().collect();
                 let can_fail = j.has_write_effect();
                 let is_pure_unit = target_is_unit && !can_fail && reads.is_empty();
-                EffectSummary { reads, can_fail, is_pure_unit }
+                EffectSummary {
+                    reads,
+                    can_fail,
+                    is_pure_unit,
+                }
             }
 
             // ── Nullary pure nodes ────────────────────────────────────────
@@ -269,8 +277,7 @@ where
             // ── Unary transparent nodes ───────────────────────────────────
             Inner::InjL(_) | Inner::InjR(_) | Inner::Take(_) | Inner::Drop(_) => {
                 let child = left.expect("unary node must have left child");
-                let is_pure_unit =
-                    target_is_unit && !child.can_fail && child.reads.is_empty();
+                let is_pure_unit = target_is_unit && !child.can_fail && child.reads.is_empty();
                 EffectSummary {
                     reads: child.reads.clone(),
                     can_fail: child.can_fail,
@@ -279,6 +286,7 @@ where
             }
 
             // ── Assert: pruned branch always introduces a failure path ────
+            // TODO: Confirm this.
             Inner::AssertL(_, _) | Inner::AssertR(_, _) => {
                 let child = left.expect("assert node must have left child");
                 EffectSummary {
@@ -293,8 +301,7 @@ where
                 let l = left.expect("binary node must have left child");
                 let r = right.expect("binary node must have right child");
                 let mut merged = EffectSummary::merge(l, r);
-                merged.is_pure_unit =
-                    target_is_unit && !merged.can_fail && merged.reads.is_empty();
+                merged.is_pure_unit = target_is_unit && !merged.can_fail && merged.reads.is_empty();
                 merged
             }
 
@@ -307,8 +314,7 @@ where
                     merged
                 }
                 (Some(child), None) | (None, Some(child)) => {
-                    let is_pure_unit =
-                        target_is_unit && !child.can_fail && child.reads.is_empty();
+                    let is_pure_unit = target_is_unit && !child.can_fail && child.reads.is_empty();
                     EffectSummary {
                         reads: child.reads.clone(),
                         can_fail: child.can_fail,
@@ -528,28 +534,40 @@ pub fn pruneable_nodes(summaries: &[EffectSummary]) -> Vec<PruneableNode> {
         .collect()
 }
 
+impl fmt::Display for InputSelector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InputSelector::Current => f.write_str("current_input"),
+            InputSelector::Indexed => f.write_str("indexed_input"),
+            InputSelector::All => f.write_str("all_inputs"),
+        }
+    }
+}
+
+impl fmt::Display for OutputSelector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OutputSelector::Indexed => f.write_str("indexed_output"),
+            OutputSelector::All => f.write_str("all_outputs"),
+        }
+    }
+}
+
 impl fmt::Display for TransactionField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use InputSelector::{Any, Current};
-        use OutputSelector::Any as AnyOut;
         match self {
             TransactionField::Version => f.write_str("version"),
             TransactionField::Locktime => f.write_str("locktime"),
             TransactionField::InputCount => f.write_str("input_count"),
             TransactionField::OutputCount => f.write_str("output_count"),
-            TransactionField::InputPrevOutpoint(Current) => f.write_str("current_input.prev_outpoint"),
-            TransactionField::InputPrevOutpoint(Any) => f.write_str("any_input.prev_outpoint"),
-            TransactionField::InputSequence(Current) => f.write_str("current_input.sequence"),
-            TransactionField::InputSequence(Any) => f.write_str("any_input.sequence"),
-            TransactionField::InputValue(Current) => f.write_str("current_input.value"),
-            TransactionField::InputValue(Any) => f.write_str("any_input.value"),
-            TransactionField::InputScriptSigHash(Current) => f.write_str("current_input.script_sig_hash"),
-            TransactionField::InputScriptSigHash(Any) => f.write_str("any_input.script_sig_hash"),
-            TransactionField::InputAnnexHash(Current) => f.write_str("current_input.annex_hash"),
-            TransactionField::InputAnnexHash(Any) => f.write_str("any_input.annex_hash"),
+            TransactionField::InputPrevOutpoint(sel) => write!(f, "{}.prev_outpoint", sel),
+            TransactionField::InputSequence(sel) => write!(f, "{}.sequence", sel),
+            TransactionField::InputValue(sel) => write!(f, "{}.value", sel),
+            TransactionField::InputScriptSigHash(sel) => write!(f, "{}.script_sig_hash", sel),
+            TransactionField::InputAnnexHash(sel) => write!(f, "{}.annex_hash", sel),
             TransactionField::CurrentInputIndex => f.write_str("current_input.index"),
-            TransactionField::OutputValue(AnyOut) => f.write_str("any_output.value"),
-            TransactionField::OutputScriptHash(AnyOut) => f.write_str("any_output.script_hash"),
+            TransactionField::OutputValue(sel) => write!(f, "{}.value", sel),
+            TransactionField::OutputScriptHash(sel) => write!(f, "{}.script_hash", sel),
             TransactionField::TotalInputValue => f.write_str("total_input_value"),
             TransactionField::TotalOutputValue => f.write_str("total_output_value"),
             TransactionField::TapleafVersion => f.write_str("tapleaf_version"),
@@ -561,71 +579,59 @@ impl fmt::Display for TransactionField {
             #[cfg(feature = "elements")]
             TransactionField::LbtcAsset => f.write_str("lbtc_asset"),
             #[cfg(feature = "elements")]
-            TransactionField::InputAsset(Current) => f.write_str("current_input.asset"),
+            TransactionField::InputAsset(sel) => write!(f, "{}.asset", sel),
             #[cfg(feature = "elements")]
-            TransactionField::InputAsset(Any) => f.write_str("any_input.asset"),
+            TransactionField::InputAmount(sel) => write!(f, "{}.amount", sel),
             #[cfg(feature = "elements")]
-            TransactionField::InputAmount(Current) => f.write_str("current_input.amount"),
+            TransactionField::InputPegin(sel) => write!(f, "{}.pegin", sel),
             #[cfg(feature = "elements")]
-            TransactionField::InputAmount(Any) => f.write_str("any_input.amount"),
+            TransactionField::InputScriptHash(sel) => write!(f, "{}.script_hash", sel),
             #[cfg(feature = "elements")]
-            TransactionField::InputPegin(Current) => f.write_str("current_input.pegin"),
+            TransactionField::IssuanceAssetAmount(sel) => {
+                write!(f, "{}.issuance_asset_amount", sel)
+            }
             #[cfg(feature = "elements")]
-            TransactionField::InputPegin(Any) => f.write_str("any_input.pegin"),
+            TransactionField::IssuanceTokenAmount(sel) => {
+                write!(f, "{}.issuance_token_amount", sel)
+            }
             #[cfg(feature = "elements")]
-            TransactionField::InputScriptHash(Current) => f.write_str("current_input.script_hash"),
+            TransactionField::IssuanceAssetProof(sel) => {
+                write!(f, "{}.issuance_asset_proof", sel)
+            }
             #[cfg(feature = "elements")]
-            TransactionField::InputScriptHash(Any) => f.write_str("any_input.script_hash"),
+            TransactionField::IssuanceTokenProof(sel) => {
+                write!(f, "{}.issuance_token_proof", sel)
+            }
             #[cfg(feature = "elements")]
-            TransactionField::IssuanceAssetAmount(Current) => f.write_str("current_input.issuance_asset_amount"),
+            TransactionField::IssuanceEntropy(sel) => write!(f, "{}.issuance_entropy", sel),
             #[cfg(feature = "elements")]
-            TransactionField::IssuanceAssetAmount(Any) => f.write_str("any_input.issuance_asset_amount"),
+            TransactionField::IssuancePresent(sel) => write!(f, "{}.issuance_present", sel),
             #[cfg(feature = "elements")]
-            TransactionField::IssuanceTokenAmount(Current) => f.write_str("current_input.issuance_token_amount"),
+            TransactionField::NewIssuanceContract(sel) => {
+                write!(f, "{}.new_issuance_contract", sel)
+            }
             #[cfg(feature = "elements")]
-            TransactionField::IssuanceTokenAmount(Any) => f.write_str("any_input.issuance_token_amount"),
+            TransactionField::ReissuanceBlinding(sel) => {
+                write!(f, "{}.reissuance_blinding", sel)
+            }
             #[cfg(feature = "elements")]
-            TransactionField::IssuanceAssetProof(Current) => f.write_str("current_input.issuance_asset_proof"),
+            TransactionField::ReissuanceEntropy(sel) => write!(f, "{}.reissuance_entropy", sel),
             #[cfg(feature = "elements")]
-            TransactionField::IssuanceAssetProof(Any) => f.write_str("any_input.issuance_asset_proof"),
+            TransactionField::OutputAsset(sel) => write!(f, "{}.asset", sel),
             #[cfg(feature = "elements")]
-            TransactionField::IssuanceTokenProof(Current) => f.write_str("current_input.issuance_token_proof"),
+            TransactionField::OutputAmount(sel) => write!(f, "{}.amount", sel),
             #[cfg(feature = "elements")]
-            TransactionField::IssuanceTokenProof(Any) => f.write_str("any_input.issuance_token_proof"),
+            TransactionField::OutputNonce(sel) => write!(f, "{}.nonce", sel),
             #[cfg(feature = "elements")]
-            TransactionField::IssuanceEntropy(Current) => f.write_str("current_input.issuance_entropy"),
+            TransactionField::OutputRangeProof(sel) => write!(f, "{}.range_proof", sel),
             #[cfg(feature = "elements")]
-            TransactionField::IssuanceEntropy(Any) => f.write_str("any_input.issuance_entropy"),
+            TransactionField::OutputSurjectionProof(sel) => {
+                write!(f, "{}.surjection_proof", sel)
+            }
             #[cfg(feature = "elements")]
-            TransactionField::IssuancePresent(Current) => f.write_str("current_input.issuance_present"),
+            TransactionField::OutputIsFee(sel) => write!(f, "{}.is_fee", sel),
             #[cfg(feature = "elements")]
-            TransactionField::IssuancePresent(Any) => f.write_str("any_input.issuance_present"),
-            #[cfg(feature = "elements")]
-            TransactionField::NewIssuanceContract(Current) => f.write_str("current_input.new_issuance_contract"),
-            #[cfg(feature = "elements")]
-            TransactionField::NewIssuanceContract(Any) => f.write_str("any_input.new_issuance_contract"),
-            #[cfg(feature = "elements")]
-            TransactionField::ReissuanceBlinding(Current) => f.write_str("current_input.reissuance_blinding"),
-            #[cfg(feature = "elements")]
-            TransactionField::ReissuanceBlinding(Any) => f.write_str("any_input.reissuance_blinding"),
-            #[cfg(feature = "elements")]
-            TransactionField::ReissuanceEntropy(Current) => f.write_str("current_input.reissuance_entropy"),
-            #[cfg(feature = "elements")]
-            TransactionField::ReissuanceEntropy(Any) => f.write_str("any_input.reissuance_entropy"),
-            #[cfg(feature = "elements")]
-            TransactionField::OutputAsset(AnyOut) => f.write_str("any_output.asset"),
-            #[cfg(feature = "elements")]
-            TransactionField::OutputAmount(AnyOut) => f.write_str("any_output.amount"),
-            #[cfg(feature = "elements")]
-            TransactionField::OutputNonce(AnyOut) => f.write_str("any_output.nonce"),
-            #[cfg(feature = "elements")]
-            TransactionField::OutputRangeProof(AnyOut) => f.write_str("any_output.range_proof"),
-            #[cfg(feature = "elements")]
-            TransactionField::OutputSurjectionProof(AnyOut) => f.write_str("any_output.surjection_proof"),
-            #[cfg(feature = "elements")]
-            TransactionField::OutputIsFee(AnyOut) => f.write_str("any_output.is_fee"),
-            #[cfg(feature = "elements")]
-            TransactionField::OutputNullDatum(AnyOut) => f.write_str("any_output.null_datum"),
+            TransactionField::OutputNullDatum(sel) => write!(f, "{}.null_datum", sel),
             #[cfg(feature = "elements")]
             TransactionField::TotalFee => f.write_str("total_fee"),
         }
@@ -635,26 +641,33 @@ impl fmt::Display for TransactionField {
 impl TransactionField {
     /// All Bitcoin transaction fields (no Elements extensions).
     pub fn all_bitcoin() -> BTreeSet<TransactionField> {
-        use InputSelector::{Any, Current};
-        use OutputSelector::Any as AnyOut;
+        use InputSelector::{All as AllIn, Current, Indexed};
+        use OutputSelector::{All as AllOut, Indexed as IndexedOut};
         [
             TransactionField::Version,
             TransactionField::Locktime,
             TransactionField::InputCount,
             TransactionField::OutputCount,
             TransactionField::InputPrevOutpoint(Current),
-            TransactionField::InputPrevOutpoint(Any),
+            TransactionField::InputPrevOutpoint(Indexed),
+            TransactionField::InputPrevOutpoint(AllIn),
             TransactionField::InputSequence(Current),
-            TransactionField::InputSequence(Any),
+            TransactionField::InputSequence(Indexed),
+            TransactionField::InputSequence(AllIn),
             TransactionField::InputValue(Current),
-            TransactionField::InputValue(Any),
+            TransactionField::InputValue(Indexed),
+            TransactionField::InputValue(AllIn),
             TransactionField::InputScriptSigHash(Current),
-            TransactionField::InputScriptSigHash(Any),
+            TransactionField::InputScriptSigHash(Indexed),
+            TransactionField::InputScriptSigHash(AllIn),
             TransactionField::InputAnnexHash(Current),
-            TransactionField::InputAnnexHash(Any),
+            TransactionField::InputAnnexHash(Indexed),
+            TransactionField::InputAnnexHash(AllIn),
             TransactionField::CurrentInputIndex,
-            TransactionField::OutputValue(AnyOut),
-            TransactionField::OutputScriptHash(AnyOut),
+            TransactionField::OutputValue(IndexedOut),
+            TransactionField::OutputValue(AllOut),
+            TransactionField::OutputScriptHash(IndexedOut),
+            TransactionField::OutputScriptHash(AllOut),
             TransactionField::TotalInputValue,
             TransactionField::TotalOutputValue,
             TransactionField::TapleafVersion,
@@ -669,45 +682,65 @@ impl TransactionField {
     /// All Elements transaction fields (superset of Bitcoin).
     #[cfg(feature = "elements")]
     pub fn all_elements() -> BTreeSet<TransactionField> {
-        use InputSelector::{Any, Current};
-        use OutputSelector::Any as AnyOut;
+        use InputSelector::{All as AllIn, Current, Indexed};
+        use OutputSelector::{All as AllOut, Indexed as IndexedOut};
         let mut fields = Self::all_bitcoin();
         fields.extend([
             TransactionField::GenesisBlockHash,
             TransactionField::LbtcAsset,
             TransactionField::InputAsset(Current),
-            TransactionField::InputAsset(Any),
+            TransactionField::InputAsset(Indexed),
+            TransactionField::InputAsset(AllIn),
             TransactionField::InputAmount(Current),
-            TransactionField::InputAmount(Any),
+            TransactionField::InputAmount(Indexed),
+            TransactionField::InputAmount(AllIn),
             TransactionField::InputPegin(Current),
-            TransactionField::InputPegin(Any),
+            TransactionField::InputPegin(Indexed),
+            TransactionField::InputPegin(AllIn),
             TransactionField::InputScriptHash(Current),
-            TransactionField::InputScriptHash(Any),
+            TransactionField::InputScriptHash(Indexed),
+            TransactionField::InputScriptHash(AllIn),
             TransactionField::IssuanceAssetAmount(Current),
-            TransactionField::IssuanceAssetAmount(Any),
+            TransactionField::IssuanceAssetAmount(Indexed),
+            TransactionField::IssuanceAssetAmount(AllIn),
             TransactionField::IssuanceTokenAmount(Current),
-            TransactionField::IssuanceTokenAmount(Any),
+            TransactionField::IssuanceTokenAmount(Indexed),
+            TransactionField::IssuanceTokenAmount(AllIn),
             TransactionField::IssuanceAssetProof(Current),
-            TransactionField::IssuanceAssetProof(Any),
+            TransactionField::IssuanceAssetProof(Indexed),
+            TransactionField::IssuanceAssetProof(AllIn),
             TransactionField::IssuanceTokenProof(Current),
-            TransactionField::IssuanceTokenProof(Any),
+            TransactionField::IssuanceTokenProof(Indexed),
+            TransactionField::IssuanceTokenProof(AllIn),
             TransactionField::IssuanceEntropy(Current),
-            TransactionField::IssuanceEntropy(Any),
+            TransactionField::IssuanceEntropy(Indexed),
+            TransactionField::IssuanceEntropy(AllIn),
             TransactionField::IssuancePresent(Current),
-            TransactionField::IssuancePresent(Any),
+            TransactionField::IssuancePresent(Indexed),
+            TransactionField::IssuancePresent(AllIn),
             TransactionField::NewIssuanceContract(Current),
-            TransactionField::NewIssuanceContract(Any),
+            TransactionField::NewIssuanceContract(Indexed),
+            TransactionField::NewIssuanceContract(AllIn),
             TransactionField::ReissuanceBlinding(Current),
-            TransactionField::ReissuanceBlinding(Any),
+            TransactionField::ReissuanceBlinding(Indexed),
+            TransactionField::ReissuanceBlinding(AllIn),
             TransactionField::ReissuanceEntropy(Current),
-            TransactionField::ReissuanceEntropy(Any),
-            TransactionField::OutputAsset(AnyOut),
-            TransactionField::OutputAmount(AnyOut),
-            TransactionField::OutputNonce(AnyOut),
-            TransactionField::OutputRangeProof(AnyOut),
-            TransactionField::OutputSurjectionProof(AnyOut),
-            TransactionField::OutputIsFee(AnyOut),
-            TransactionField::OutputNullDatum(AnyOut),
+            TransactionField::ReissuanceEntropy(Indexed),
+            TransactionField::ReissuanceEntropy(AllIn),
+            TransactionField::OutputAsset(IndexedOut),
+            TransactionField::OutputAsset(AllOut),
+            TransactionField::OutputAmount(IndexedOut),
+            TransactionField::OutputAmount(AllOut),
+            TransactionField::OutputNonce(IndexedOut),
+            TransactionField::OutputNonce(AllOut),
+            TransactionField::OutputRangeProof(IndexedOut),
+            TransactionField::OutputRangeProof(AllOut),
+            TransactionField::OutputSurjectionProof(IndexedOut),
+            TransactionField::OutputSurjectionProof(AllOut),
+            TransactionField::OutputIsFee(IndexedOut),
+            TransactionField::OutputIsFee(AllOut),
+            TransactionField::OutputNullDatum(IndexedOut),
+            TransactionField::OutputNullDatum(AllOut),
             TransactionField::TotalFee,
         ]);
         fields
