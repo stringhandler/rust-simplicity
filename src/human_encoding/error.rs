@@ -2,7 +2,6 @@
 
 //! Parsing Errors
 
-use santiago::lexer::Lexeme;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::{error, fmt, iter};
@@ -17,22 +16,6 @@ pub struct ErrorSet {
     context: Option<Arc<str>>,
     line_map: Arc<Mutex<Vec<usize>>>,
     errors: BTreeMap<Option<Position>, Vec<Error>>,
-}
-
-impl<T> From<santiago::parser::ParseError<T>> for ErrorSet {
-    fn from(e: santiago::parser::ParseError<T>) -> Self {
-        let lex = e.at.map(|rc| (*rc).clone());
-        match lex.as_ref().map(|lex| &lex.position).map(Position::from) {
-            Some(pos) => ErrorSet::single(pos, Error::ParseFailed(lex)),
-            None => ErrorSet::single_no_position(Error::ParseFailed(lex)),
-        }
-    }
-}
-
-impl From<santiago::lexer::LexerError> for ErrorSet {
-    fn from(e: santiago::lexer::LexerError) -> Self {
-        ErrorSet::single(e.position, Error::LexFailed(e.message))
-    }
 }
 
 impl ErrorSet {
@@ -260,10 +243,10 @@ pub enum Error {
     NameRepeated(Arc<str>),
     /// Program did not have a `main` expression
     NoMain,
-    /// Parsing failed (the parser provides us some extra information, but beyond
-    /// the line and column, it does not seem very useful to a user, so we drop it).
-    ParseFailed(Option<Lexeme>),
-    /// Lexing failed; here santiago provides us an error message which is useful
+    /// Parsing failed; the string (if any) is a description of the token at which
+    /// parsing failed.
+    ParseFailed(Option<String>),
+    /// Lexing failed
     LexFailed(String),
     /// A number was parsed in some context but was out of range.
     NumberOutOfRange(String),
@@ -327,7 +310,7 @@ impl fmt::Display for Error {
                 write!(f, "number {} was out of allowable range", n)
             }
             Error::ParseFailed(None) => f.write_str("could not parse"),
-            Error::ParseFailed(Some(ref lex)) => write!(f, "could not parse `{}`", lex.raw),
+            Error::ParseFailed(Some(ref raw)) => write!(f, "could not parse `{}`", raw),
             Error::LexFailed(ref msg) => write!(f, "could not parse: {}", msg),
             Error::TypeCheck(ref e) => fmt::Display::fmt(e, f),
             Error::Undefined(ref s) => write!(f, "reference to undefined symbol `{}`", s),

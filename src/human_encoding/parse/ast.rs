@@ -2,16 +2,16 @@
 
 //! Parsing
 
-use std::mem;
+use std::str;
 use std::sync::Arc;
+
+use logos::{Lexer, Logos};
 
 use crate::human_encoding::{Error, ErrorSet, Position, WitnessOrHole};
 use crate::jet::Jet;
 use crate::value::Word;
 use crate::{node, types};
-use crate::{BitIter, Cmr, FailEntropy};
-use santiago::grammar::{Associativity, Grammar};
-use santiago::lexer::{Lexeme, LexerRules};
+use crate::{BitIter, FailEntropy};
 
 /// A single non-empty line of a program, of the form x = y :: t
 ///
@@ -106,278 +106,517 @@ impl Type {
     }
 }
 
-/// Takes a program as a string and parses it into an AST (actually, a vector
-/// of lines, each of which is individually an AST)
-pub fn parse_line_vector<J: Jet + 'static>(input: &str) -> Result<Vec<Line<J>>, ErrorSet> {
-    let lexer_rules = lexer_rules();
-    let grammar = grammar::<J>();
+/// Token type produced by the logos lexer.
+#[derive(Logos, Debug, Clone, PartialEq)]
+#[logos(skip r"[ \t\r\n]+")] // skip whitespace
+#[logos(skip r"--[^\n]*")] // skip line comments
+enum Token {
+    // Punctuatiions
+    #[token(":=")]
+    Assign,
+    #[token("->")]
+    Arrow,
+    #[token("#{")]
+    HashBrace,
+    #[token("(")]
+    LParen,
+    #[token(")")]
+    RParen,
+    #[token("+")]
+    Plus,
+    #[token("*")]
+    Star,
+    #[token(":")]
+    Colon,
+    #[token("}")]
+    RBrace,
+    #[token("?")]
+    Question,
 
-    let lexemes = match santiago::lexer::lex(&lexer_rules, input) {
-        Ok(lexemes) => lexemes,
-        Err(err) => return Err(err.into()),
-    };
-    let trees = santiago::parser::parse(&grammar, &lexemes)?;
-    assert_eq!(trees.len(), 1, "ambiguous parse (this is a bug)");
-    match trees[0].as_abstract_syntax_tree() {
-        Ast::Program(lines) => Ok(lines),
-        Ast::Error(errs) => Err(errs),
-        x => unreachable!(
-            "Parsed program into non-program non-error {:?}; this is a bug.",
-            x
-        ),
-    }
+    // Keywords
+    #[token("const")]
+    Const,
+    #[token("assertl")]
+    AssertL,
+    #[token("assertr")]
+    AssertR,
+    #[token("fail")]
+    Fail,
+    #[token("disconnect")]
+    Disconnect,
+    #[token("case")]
+    Case,
+    #[token("comp")]
+    Comp,
+    #[token("pair")]
+    Pair,
+    #[token("injl")]
+    InjL,
+    #[token("injr")]
+    InjR,
+    #[token("take")]
+    Take,
+    #[token("drop")]
+    Drop,
+    #[token("unit")]
+    Unit,
+    #[token("iden")]
+    Iden,
+    #[token("witness")]
+    Witness,
+
+    // Jet names
+    #[regex(r"jet_[a-z0-9_]+", |lex| lex.slice().to_owned())]
+    Jet(String),
+
+    // Literals
+    #[token("_")]
+    Underscore,
+    #[regex(r"0b[01]+", |lex| lex.slice().to_owned())]
+    BinLiteral(String),
+    #[regex(r"0x[0-9a-f]+", |lex| lex.slice().to_owned())]
+    HexLiteral(String),
+
+    // CMR literal
+    #[regex(r"#[a-fA-F0-9]{64}", |lex| lex.slice().to_owned())]
+    CmrLiteral(String),
+
+    // Types
+    #[token("1")]
+    One,
+    #[token("2")]
+    Two,
+    #[regex(r"2\^[1-9][0-9]*", |lex| lex.slice().to_owned())]
+    TwoExp(String),
+
+    // Symbols
+    #[regex(r"[a-zA-Z_\-.'][0-9a-zA-Z_\-.']*", priority = 1, callback = |lex| lex.slice().to_owned())]
+    Symbol(String),
 }
 
-/// Check a list of AST elements for errors; if any are errors, combine them and return the result
-fn propagate_errors<J: Jet>(ast: &[Ast<J>]) -> Option<Ast<J>> {
-    let mut e = ErrorSet::new();
-    for elem in ast {
-        if let Ast::Error(errs) = elem {
-            e.merge(errs);
-        }
-    }
-    if e.is_empty() {
-        None
-    } else {
-        Some(Ast::Error(e))
-    }
-}
-
-/// Main AST structure
-///
-/// This structure is never really instantiated; during construction it is
-/// continually collapsed until in the end it will be in either the `Program`
-/// or `Error` variant.
+/// A token together with its source position
 #[derive(Debug, Clone)]
-enum Ast<J: Jet> {
-    Combinator {
-        comb: node::Inner<(), J, (), WitnessOrHole>,
-        position: Position,
-    },
-    /// A type->type arrow
-    Arrow(Option<Type>, Option<Type>),
-    /// A #{expr} or #abcd CMR
-    Cmr(AstCmr<J>),
-    /// An error occurred during parsing
-    Error(ErrorSet),
-    /// An expression
-    Expression(Expression<J>),
-    /// A full expression line
-    Line(Line<J>),
-    /// A hex or binary literal
-    Literal {
-        data: Vec<u8>,
-        bit_length: usize,
-        position: Position,
-    },
-    /// The top-level program
-    Program(Vec<Line<J>>),
-    /// A symbol
-    Symbol { value: Arc<str>, position: Position },
-    /// A type
-    Type(Option<Type>),
-    /// Dummy value used internally in the parser when building the tree.
-    ///
-    /// Any parse objects which have no information in themselves (e.g. the
-    /// plus or star symbols) but which are just used to shape the parse
-    /// tree, get mapped to this value and then discarded.
-    Dummy { position: Position },
-    /// Dummy value used when manipulating the tree in-place, to replace
-    /// data that we move out of the tree
-    Replaced,
+struct Spanned {
+    token: Token,
+    position: Position,
 }
 
-impl<J: Jet> Ast<J> {
-    /// Creates an `Ast` from a single sub-AST
-    fn from_1<T, F1, F>(toks: &mut [Self], convert: F1, unconvert: F) -> Self
-    where
-        F1: FnOnce(&mut Self) -> T,
-        F: FnOnce(T) -> Self,
-    {
-        if let Some(e) = propagate_errors(toks) {
-            return e;
+/// Lex the entire input into a vector of spanned tokens
+fn lex_all(input: &str) -> Result<Vec<Spanned>, ErrorSet> {
+    let mut lexer: Lexer<'_, Token> = Token::lexer(input);
+    let mut tokens = Vec::new();
+    while let Some(result) = lexer.next() {
+        let span = lexer.span();
+        // Compute line-column position
+        let position = offset_to_position(input, span.start);
+        match result {
+            Ok(token) => tokens.push(Spanned { token, position }),
+            Err(()) => {
+                return Err(ErrorSet::single(
+                    position,
+                    Error::LexFailed(format!(
+                        "unexpected character `{}`",
+                        &input[span.start..span.end]
+                    )),
+                ));
+            }
         }
-        assert_eq!(toks.len(), 1);
-        unconvert(convert(&mut toks[0]))
+    }
+    Ok(tokens)
+}
+
+/// Convert a byte offset into line-column
+fn offset_to_position(input: &str, offset: usize) -> Position {
+    let mut line: usize = 1;
+    let mut col: usize = 1;
+    for (i, ch) in input.char_indices() {
+        if i >= offset {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+    Position::new(line, col)
+}
+
+struct Parser {
+    tokens: Vec<Spanned>,
+    pos: usize,
+}
+
+impl Parser {
+    fn new(tokens: Vec<Spanned>) -> Self {
+        Parser { tokens, pos: 0 }
     }
 
-    /// Creates an `Ast` from two sub-`Ast`s with a dummy in between
-    fn from_2<T, U, F1, F2, F>(toks: &mut [Self], convert1: F1, convert2: F2, unconvert: F) -> Self
-    where
-        F1: FnOnce(&mut Self) -> T,
-        F2: FnOnce(&mut Self) -> U,
-        F: FnOnce(T, U) -> Self,
-    {
-        if let Some(e) = propagate_errors(toks) {
-            return e;
-        }
-        assert_eq!(toks.len(), 3);
-        toks[1].expect_position();
-        unconvert(convert1(&mut toks[0]), convert2(&mut toks[2]))
+    fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.pos).map(|s| &s.token)
     }
 
-    /// Creates an `Ast` from three sub-`Ast`s with dummies in between
-    fn from_3<T, U, V, F1, F2, F3, F>(
-        toks: &mut [Self],
-        convert1: F1,
-        convert2: F2,
-        convert3: F3,
-        unconvert: F,
-    ) -> Self
-    where
-        F1: FnOnce(&mut Self) -> T,
-        F2: FnOnce(&mut Self) -> U,
-        F3: FnOnce(&mut Self) -> V,
-        F: FnOnce(T, U, V) -> Self,
-    {
-        if let Some(e) = propagate_errors(toks) {
-            return e;
-        }
-        assert_eq!(toks.len(), 5);
-        toks[1].expect_position();
-        toks[3].expect_position();
-        unconvert(
-            convert1(&mut toks[0]),
-            convert2(&mut toks[2]),
-            convert3(&mut toks[4]),
-        )
+    fn current_position(&self) -> Position {
+        self.tokens
+            .get(self.pos)
+            .map(|s| s.position)
+            .unwrap_or_default()
     }
 
-    /// Creates an AST from a combinator with no arguments
-    fn from_combinator(mut toks: Vec<Self>) -> Self {
-        if let Some(e) = propagate_errors(&toks) {
-            return e;
+    /// Advance and return the consumed spanned token
+    fn advance(&mut self) -> &Spanned {
+        let s = &self.tokens[self.pos];
+        self.pos += 1;
+        s
+    }
+
+    /// Consume a token if it matches, returning true on success
+    fn eat(&mut self, expected: &Token) -> bool {
+        if self.peek() != Some(expected) {
+            return false;
         }
+        self.pos += 1;
+        true
+    }
 
-        let (comb, position) = match mem::replace(&mut toks[0], Ast::Replaced) {
-            Ast::Combinator { comb, position } => (comb, position),
-            _ => unreachable!(),
-        };
+    /// Consume a token that must match, or return an error
+    fn expect(&mut self, expected: &Token) -> Result<Position, ErrorSet> {
+        if self.peek() != Some(expected) {
+            return Err(ErrorSet::single(
+                self.current_position(),
+                Error::ParseFailed(self.peek_raw_description()),
+            ));
+        }
+        let pos = self.current_position();
+        self.pos += 1;
+        Ok(pos)
+    }
 
-        // This stupid construction is needed to avoid borrowck rules
-        // around borrowing tok[1] and tok[2] mutably at the same time.
-        let arcs: Vec<Arc<_>> = toks[1..]
-            .iter_mut()
-            .map(Ast::expect_expression)
-            .map(Arc::new)
-            .collect();
-        let inner = comb
-            .map_left_right(|_| Arc::clone(&arcs[0]), |_| Arc::clone(&arcs[1]))
-            .map_disconnect(|_| Arc::clone(&arcs[1]));
-        Ast::Expression(Expression {
-            inner: ExprInner::Inline(inner),
-            position,
+    /// Whether we are at the end of input
+    fn at_end(&self) -> bool {
+        self.pos >= self.tokens.len()
+    }
+
+    /// Human-readable description of the current token for error messages
+    fn peek_raw_description(&self) -> Option<String> {
+        self.tokens.get(self.pos).map(|s| match &s.token {
+            Token::Assign => ":=".to_owned(),
+            Token::Arrow => "->".to_owned(),
+            Token::HashBrace => "#{".to_owned(),
+            Token::LParen => "(".to_owned(),
+            Token::RParen => ")".to_owned(),
+            Token::Plus => "+".to_owned(),
+            Token::Star => "*".to_owned(),
+            Token::Colon => ":".to_owned(),
+            Token::RBrace => "}".to_owned(),
+            Token::Question => "?".to_owned(),
+            Token::Const => "const".to_owned(),
+            Token::AssertL => "assertl".to_owned(),
+            Token::AssertR => "assertr".to_owned(),
+            Token::Fail => "fail".to_owned(),
+            Token::Disconnect => "disconnect".to_owned(),
+            Token::Case => "case".to_owned(),
+            Token::Comp => "comp".to_owned(),
+            Token::Pair => "pair".to_owned(),
+            Token::InjL => "injl".to_owned(),
+            Token::InjR => "injr".to_owned(),
+            Token::Take => "take".to_owned(),
+            Token::Drop => "drop".to_owned(),
+            Token::Unit => "unit".to_owned(),
+            Token::Iden => "iden".to_owned(),
+            Token::Witness => "witness".to_owned(),
+            Token::Jet(ref s) => s.clone(),
+            Token::Underscore => "_".to_owned(),
+            Token::BinLiteral(ref s) | Token::HexLiteral(ref s) => s.clone(),
+            Token::CmrLiteral(ref s) => s.clone(),
+            Token::One => "1".to_owned(),
+            Token::Two => "2".to_owned(),
+            Token::TwoExp(ref s) => s.clone(),
+            Token::Symbol(ref s) => s.clone(),
         })
     }
+}
 
-    /// Creates an AST from a dummy lexeme
-    fn from_dummy_lexeme(lexemes: &[&std::rc::Rc<Lexeme>]) -> Self {
-        assert_eq!(lexemes.len(), 1);
-        let position = (&lexemes[0].position).into();
-        Ast::Dummy { position }
+/// Takes a program as a string and parses it into an AST
+pub fn parse_line_vector<J: Jet + 'static>(input: &str) -> Result<Vec<Line<J>>, ErrorSet> {
+    let tokens = lex_all(input)?;
+    let mut parser = Parser::new(tokens);
+    let mut lines = Vec::new();
+    while !parser.at_end() {
+        lines.push(parse_line(&mut parser)?);
     }
+    Ok(lines)
+}
 
-    /// Creates an AST from a lexeme which forms a complete type
-    fn from_type_lexeme(lexemes: &[&std::rc::Rc<Lexeme>]) -> Self {
-        assert_eq!(lexemes.len(), 1);
-        let position = &lexemes[0].position;
-        match lexemes[0].raw.as_str() {
-            "1" => Ast::Type(Some(Type::One)),
-            "2" => Ast::Type(Some(Type::Two)),
-            other => {
-                assert_eq!(&other[..2], "2^");
-                match str::parse::<u32>(&other[2..]) {
-                    // TODO how many of these should we support?
-                    Ok(0) => Ast::Type(Some(Type::One)),
-                    Ok(1) => Ast::Type(Some(Type::Two)),
-                    Ok(2) => Ast::Type(Some(Type::TwoTwoN(1))),
-                    Ok(4) => Ast::Type(Some(Type::TwoTwoN(2))),
-                    Ok(8) => Ast::Type(Some(Type::TwoTwoN(3))),
-                    Ok(16) => Ast::Type(Some(Type::TwoTwoN(4))),
-                    Ok(32) => Ast::Type(Some(Type::TwoTwoN(5))),
-                    Ok(64) => Ast::Type(Some(Type::TwoTwoN(6))),
-                    Ok(128) => Ast::Type(Some(Type::TwoTwoN(7))),
-                    Ok(256) => Ast::Type(Some(Type::TwoTwoN(8))),
-                    Ok(512) => Ast::Type(Some(Type::TwoTwoN(9))),
-                    Ok(y) => Ast::Error(ErrorSet::single(position, Error::Bad2ExpNumber(y))),
-                    Err(_) => Ast::Error(ErrorSet::single(
-                        position,
-                        Error::NumberOutOfRange(other.to_owned()),
-                    )),
-                }
-            }
-        }
-    }
+/// Parse a line
+fn parse_line<J: Jet + 'static>(p: &mut Parser) -> Result<Line<J>, ErrorSet> {
+    let (name, position) = parse_symbol_value(p)?;
 
-    /// Creates an AST from a combinator lexeme
-    fn from_combinator_lexeme(lexemes: &[&std::rc::Rc<Lexeme>]) -> Self {
-        assert_eq!(lexemes.len(), 1);
-        let position = (&lexemes[0].position).into();
-        let comb = match lexemes[0].raw.as_str() {
-            "unit" => node::Inner::Unit,
-            "iden" => node::Inner::Iden,
-            "injl" => node::Inner::InjL(()),
-            "injr" => node::Inner::InjR(()),
-            "take" => node::Inner::Take(()),
-            "drop" => node::Inner::Drop(()),
-            "comp" => node::Inner::Comp((), ()),
-            "case" => node::Inner::Case((), ()),
-            "assertl" => node::Inner::AssertL((), Cmr::unit()),
-            "assertr" => node::Inner::AssertR(Cmr::unit(), ()),
-            "pair" => node::Inner::Pair((), ()),
-            "disconnect" => node::Inner::Disconnect((), ()),
-            "witness" => node::Inner::Witness(WitnessOrHole::Witness),
-            "fail" => node::Inner::Fail(FailEntropy::ZERO),
-            other => {
-                assert_eq!(&other[..4], "jet_");
-                if let Ok(jet) = J::from_str(&other[4..]) {
-                    node::Inner::Jet(jet)
-                } else {
-                    return Ast::Error(ErrorSet::single(
-                        position,
-                        Error::UnknownJet(other.to_owned()),
-                    ));
-                }
-            }
-        };
-        Ast::Combinator { comb, position }
-    }
-
-    /// Creates an AST from a literal lexeme
-    fn from_literal_lexeme(lexemes: &[&std::rc::Rc<Lexeme>]) -> Self {
-        assert_eq!(lexemes.len(), 1);
-        let position = (&lexemes[0].position).into();
-
-        if lexemes[0].raw == "_" {
-            return Ast::Literal {
-                data: vec![],
-                bit_length: 0,
-                position,
-            };
-        }
-
-        let s = &lexemes[0].raw[2..];
-        if &lexemes[0].raw[..2] == "0x" {
-            let bit_length = s.len() * 4;
-            let mut data = Vec::with_capacity(s.len().div_ceil(2));
-            for idx in 0..s.len() / 2 {
-                data.push(u8::from_str_radix(&s[2 * idx..2 * idx + 2], 16).unwrap());
-            }
-            if s.len() % 2 == 1 {
-                data.push(u8::from_str_radix(&s[s.len() - 1..], 16).unwrap() << 4);
-            }
-
-            Ast::Literal {
-                data,
-                bit_length,
-                position,
-            }
+    if p.eat(&Token::Assign) {
+        // symbol ":=" expr  (optionally followed by ":" arrow)
+        let expr = parse_expr(p)?;
+        let arrow = if p.eat(&Token::Colon) {
+            parse_arrow(p)?
         } else {
-            assert_eq!(&lexemes[0].raw[..2], "0b");
+            (None, None)
+        };
+        return Ok(Line {
+            position,
+            name,
+            expression: Some(expr),
+            arrow,
+        });
+    }
 
+    if p.eat(&Token::Colon) {
+        // symbol ":" arrow
+        let arrow = parse_arrow(p)?;
+        return Ok(Line {
+            position,
+            name,
+            expression: None,
+            arrow,
+        });
+    }
+
+    Err(ErrorSet::single(
+        p.current_position(),
+        Error::ParseFailed(p.peek_raw_description()),
+    ))
+}
+
+/// Parse an arrow (type -> type)
+fn parse_arrow(p: &mut Parser) -> Result<(Option<Type>, Option<Type>), ErrorSet> {
+    let src = parse_type(p)?;
+    p.expect(&Token::Arrow)?;
+    let tgt = parse_type(p)?;
+    Ok((src, tgt))
+}
+
+/// Parse an expression
+fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSet> {
+    let position = p.current_position();
+
+    match p.peek().cloned() {
+        Some(Token::LParen) => {
+            p.advance();
+            let inner = parse_expr(p)?;
+            p.expect(&Token::RParen)?;
+            Ok(inner)
+        }
+        Some(Token::Question) => {
+            p.advance();
+            let (name, sym_pos) = parse_symbol_value(p)?;
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Witness(WitnessOrHole::TypedHole(name))),
+                position: sym_pos,
+            })
+        }
+        Some(Token::Const) => {
+            p.advance();
+            let (data, bit_length, lit_pos) = parse_literal(p)?;
+            let mut iter = BitIter::from(data);
+            if bit_length.count_ones() != 1 || bit_length > 1 << 31 {
+                return Err(ErrorSet::single(
+                    lit_pos,
+                    Error::BadWordLength { bit_length },
+                ));
+            }
+            let word = Word::from_bits(&mut iter, bit_length.trailing_zeros()).unwrap();
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Word(word)),
+                position: lit_pos,
+            })
+        }
+        Some(Token::AssertL) => {
+            p.advance();
+            let left = parse_expr(p)?;
+            let cmr = parse_cmr(p)?;
+            Ok(Expression {
+                inner: ExprInner::AssertL(Arc::new(left), cmr),
+                position,
+            })
+        }
+        Some(Token::AssertR) => {
+            p.advance();
+            let cmr = parse_cmr(p)?;
+            let right = parse_expr(p)?;
+            Ok(Expression {
+                inner: ExprInner::AssertR(cmr, Arc::new(right)),
+                position,
+            })
+        }
+        Some(Token::Fail) => {
+            p.advance();
+            let (value, bit_length, lit_pos) = parse_literal(p)?;
+            if bit_length < 128 {
+                return Err(ErrorSet::single(
+                    lit_pos,
+                    Error::EntropyInsufficient { bit_length },
+                ));
+            }
+            if bit_length > 512 {
+                return Err(ErrorSet::single(
+                    lit_pos,
+                    Error::EntropyTooMuch { bit_length },
+                ));
+            }
+            let mut entropy = [0; 64];
+            entropy[..value.len()].copy_from_slice(&value[..]);
+            let entropy = FailEntropy::from_byte_array(entropy);
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Fail(entropy)),
+                position,
+            })
+        }
+        // Nullary?
+        Some(Token::Unit) => {
+            p.advance();
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Unit),
+                position,
+            })
+        }
+        Some(Token::Iden) => {
+            p.advance();
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Iden),
+                position,
+            })
+        }
+        Some(Token::Witness) => {
+            p.advance();
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Witness(WitnessOrHole::Witness)),
+                position,
+            })
+        }
+        Some(Token::Jet(ref name)) => {
+            let jet_name = name.clone();
+            p.advance();
+            let Ok(jet) = J::from_str(&jet_name[4..]) else {
+                return Err(ErrorSet::single(position, Error::UnknownJet(jet_name)));
+            };
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Jet(jet)),
+                position,
+            })
+        }
+        // Unary
+        Some(Token::InjL) => {
+            p.advance();
+            let child = Arc::new(parse_expr(p)?);
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::InjL(child)),
+                position,
+            })
+        }
+        Some(Token::InjR) => {
+            p.advance();
+            let child = Arc::new(parse_expr(p)?);
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::InjR(child)),
+                position,
+            })
+        }
+        Some(Token::Take) => {
+            p.advance();
+            let child = Arc::new(parse_expr(p)?);
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Take(child)),
+                position,
+            })
+        }
+        Some(Token::Drop) => {
+            p.advance();
+            let child = Arc::new(parse_expr(p)?);
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Drop(child)),
+                position,
+            })
+        }
+        // Binary
+        Some(Token::Case) => {
+            p.advance();
+            let left = Arc::new(parse_expr(p)?);
+            let right = Arc::new(parse_expr(p)?);
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Case(left, right)),
+                position,
+            })
+        }
+        Some(Token::Comp) => {
+            p.advance();
+            let left = Arc::new(parse_expr(p)?);
+            let right = Arc::new(parse_expr(p)?);
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Comp(left, right)),
+                position,
+            })
+        }
+        Some(Token::Pair) => {
+            p.advance();
+            let left = Arc::new(parse_expr(p)?);
+            let right = Arc::new(parse_expr(p)?);
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Pair(left, right)),
+                position,
+            })
+        }
+        Some(Token::Disconnect) => {
+            p.advance();
+            let left = Arc::new(parse_expr(p)?);
+            let right = Arc::new(parse_expr(p)?);
+            Ok(Expression {
+                inner: ExprInner::Inline(node::Inner::Disconnect(left, right)),
+                position,
+            })
+        }
+        // Symbol reference
+        Some(Token::Symbol(_)) | Some(Token::Underscore) => {
+            let (name, sym_pos) = parse_symbol_value(p)?;
+            Ok(Expression::reference(name, sym_pos))
+        }
+        _ => Err(ErrorSet::single(
+            position,
+            Error::ParseFailed(p.peek_raw_description()),
+        )),
+    }
+}
+
+/// Parse a CMR (either an expression in #{} or a literal)
+fn parse_cmr<J: Jet + 'static>(p: &mut Parser) -> Result<AstCmr<J>, ErrorSet> {
+    if p.eat(&Token::HashBrace) {
+        let expr = parse_expr(p)?;
+        p.expect(&Token::RBrace)?;
+        return Ok(AstCmr::Expr(Arc::new(expr)));
+    }
+
+    if let Some(Token::CmrLiteral(_)) = p.peek() {
+        p.advance();
+        return Ok(AstCmr::Literal);
+    }
+
+    Err(ErrorSet::single(
+        p.current_position(),
+        Error::ParseFailed(p.peek_raw_description()),
+    ))
+}
+
+/// Parse a literal (underscore, binary, or hex)
+fn parse_literal(p: &mut Parser) -> Result<(Vec<u8>, usize, Position), ErrorSet> {
+    let position = p.current_position();
+    match p.peek().cloned() {
+        Some(Token::Underscore) => {
+            p.advance();
+            Ok((vec![], 0, position))
+        }
+        Some(Token::BinLiteral(ref raw)) => {
+            let s = &raw[2..];
             let bit_length = s.len();
             let mut data = Vec::with_capacity(s.len().div_ceil(8));
-            let mut x = 0;
+            let mut x: u8 = 0;
             for (n, ch) in s.chars().enumerate() {
                 match ch {
                     '0' => {}
@@ -392,408 +631,125 @@ impl<J: Jet> Ast<J> {
             if s.len() % 8 != 0 {
                 data.push(x);
             }
-
-            Ast::Literal {
-                data,
-                bit_length,
-                position,
+            p.advance();
+            Ok((data, bit_length, position))
+        }
+        Some(Token::HexLiteral(ref raw)) => {
+            let s = &raw[2..];
+            let bit_length = s.len() * 4;
+            let mut data = Vec::with_capacity(s.len().div_ceil(2));
+            for idx in 0..s.len() / 2 {
+                data.push(u8::from_str_radix(&s[2 * idx..2 * idx + 2], 16).unwrap());
             }
+            if s.len() % 2 == 1 {
+                data.push(u8::from_str_radix(&s[s.len() - 1..], 16).unwrap() << 4);
+            }
+            p.advance();
+            Ok((data, bit_length, position))
         }
-    }
-
-    /// Creates an AST from a CMR literal lexeme
-    fn from_cmr_literal_lexeme(lexemes: &[&std::rc::Rc<Lexeme>]) -> Self {
-        assert_eq!(lexemes.len(), 1);
-        assert_eq!(lexemes[0].raw.len(), 65);
-
-        Ast::Cmr(AstCmr::Literal)
-    }
-
-    fn expect_arrow(&mut self) -> (Option<Type>, Option<Type>) {
-        let replaced = mem::replace(self, Ast::Replaced);
-        if let Ast::Arrow(a, b) = replaced {
-            (a, b)
-        } else {
-            panic!("Expected arrow, got {:?}", self);
-        }
-    }
-
-    /// Checks that a given AST element is a dummy value
-    fn expect_position(&self) -> Position {
-        match self {
-            Ast::Combinator { position, .. } => *position,
-            Ast::Dummy { position } => *position,
-            Ast::Literal { position, .. } => *position,
-            Ast::Symbol { position, .. } => *position,
-            _ => panic!("Expected some element with position, got {:?}", self),
-        }
-    }
-
-    fn expect_cmr(&mut self) -> AstCmr<J> {
-        let replaced = mem::replace(self, Ast::Replaced);
-        if let Ast::Cmr(cmr) = replaced {
-            cmr
-        } else {
-            panic!("Expected CMR, got {:?}", replaced);
-        }
-    }
-
-    fn expect_expression(&mut self) -> Expression<J> {
-        let replaced = mem::replace(self, Ast::Replaced);
-        if let Ast::Expression(exp) = replaced {
-            exp
-        } else {
-            panic!("Expected expression, got {:?}", replaced);
-        }
-    }
-
-    fn expect_line(&mut self) -> Line<J> {
-        let replaced = mem::replace(self, Ast::Replaced);
-        if let Ast::Line(ell) = replaced {
-            ell
-        } else {
-            panic!("Expected line, got {:?}", replaced);
-        }
-    }
-
-    fn expect_literal(&mut self) -> (Vec<u8>, usize, Position) {
-        let replaced = mem::replace(self, Ast::Replaced);
-        if let Ast::Literal {
-            data,
-            bit_length,
+        _ => Err(ErrorSet::single(
             position,
-        } = replaced
-        {
-            (data, bit_length, position)
-        } else {
-            panic!("Expected literal, got {:?}", replaced);
-        }
-    }
-
-    fn expect_program(&mut self) -> Vec<Line<J>> {
-        let replaced = mem::replace(self, Ast::Replaced);
-        if let Ast::Program(lines) = replaced {
-            lines
-        } else {
-            panic!("Expected program, got {:?}", replaced);
-        }
-    }
-
-    fn expect_symbol(&mut self) -> (Arc<str>, Position) {
-        let replaced = mem::replace(self, Ast::Replaced);
-        if let Ast::Symbol { value, position } = replaced {
-            (value, position)
-        } else {
-            panic!("Expected symbol, got {:?}", replaced);
-        }
-    }
-
-    /// Checks that a given AST element is a type, and returns it if so
-    ///
-    /// Replaces the original value with a dummy, on the assumption that
-    /// it lives in a vector and therefore can't be simply moved.
-    fn expect_type(&mut self) -> Option<Type> {
-        let replaced = mem::replace(self, Ast::Replaced);
-        if let Ast::Type(ty) = replaced {
-            ty
-        } else {
-            panic!("Expected type, got {:?}", replaced);
-        }
+            Error::ParseFailed(p.peek_raw_description()),
+        )),
     }
 }
 
-fn lexer_rules() -> LexerRules {
-    santiago::lexer_rules!(
-        // Base combinators and jets
-        "DEFAULT" | "CONST"  = string "const";
-        "DEFAULT" | "NULLARY" = pattern "unit|iden|witness|jet_[a-z0-9_]*";
-        "DEFAULT" | "UNARY"   = pattern "injl|injr|take|drop";
-        "DEFAULT" | "BINARY"  = pattern "case|comp|pair|disconnect";
-        // Assertions
-        "DEFAULT" | "ASSERTL" = string "assertl";
-        "DEFAULT" | "ASSERTR" = string "assertr";
-        "DEFAULT" | "FAIL" = string "fail";
-        // Literals
-        "DEFAULT" | "_" = string "_";
-        "DEFAULT" | "LITERAL" = pattern r"0b[01]+|0x[0-9a-f]+";
-
-        // Symbols (expression names). Essentially any alphanumeric that does not
-        // start with a numbera and isn't a reserved symbol (i.e. one of the above)
-        // patterns. Dash, underscore and dot are also allowed anywhere in a symbol.
-        "DEFAULT" | "SYMBOL" = pattern r"[a-zA-Z_\-.'][0-9a-zA-Z_\-.']*";
-
-        // Type/arrow symbols
-        "DEFAULT" | "(" = string "(";
-        "DEFAULT" | ")" = string ")";
-        "DEFAULT" | "+" = string "+";
-        "DEFAULT" | "*" = string "*";
-        "DEFAULT" | "->" = string "->";
-        "DEFAULT" | ":" = string ":";
-        "DEFAULT" | "1" = string "1";
-        "DEFAULT" | "2" = string "2";
-        "DEFAULT" | "2EXP" = pattern "2\\^[1-9][0-9]*";
-
-        // Assignment
-        "DEFAULT" | ":=" = string ":=";
-
-        // CMR and holes
-        "DEFAULT" | "CMRLIT" = pattern "#[a-fA-F0-9]{64}";
-        "DEFAULT" | "#{" = string "#{";
-        "DEFAULT" | "}" = string "}";
-        "DEFAULT" | "?" = string "?";
-
-        // Comments (single-line comments only).
-        "DEFAULT" | "LINE_COMMENT" = pattern r"--.*\n" => |lexer| lexer.skip();
-
-        // No whitespace is significant except to separate other tokens.
-        "DEFAULT" | "WS" = pattern r"\s" => |lexer| lexer.skip();
-    )
+/// Parse a type expression, left-associative for both + and *
+fn parse_type(p: &mut Parser) -> Result<Option<Type>, ErrorSet> {
+    let mut lhs = parse_type_atom(p)?;
+    loop {
+        if p.peek() == Some(&Token::Plus) {
+            p.advance();
+            let rhs = parse_type_atom(p)?;
+            lhs = lhs
+                .zip(rhs)
+                .map(|(l, r)| Type::Sum(Box::new(l), Box::new(r)));
+            continue;
+        }
+        if p.peek() == Some(&Token::Star) {
+            p.advance();
+            let rhs = parse_type_atom(p)?;
+            lhs = lhs
+                .zip(rhs)
+                .map(|(l, r)| Type::Product(Box::new(l), Box::new(r)));
+            continue;
+        }
+        break;
+    }
+    Ok(lhs)
 }
 
-fn grammar<J: Jet + 'static>() -> Grammar<Ast<J>> {
-    santiago::grammar!(
-        "program" => empty => |_| Ast::Program(vec![]);
-        "program" => rules "line" "program" => |mut toks| {
-            if let Some(e) = propagate_errors(&toks) { return e; }
-            let line = toks[0].expect_line();
-            let prog = toks[1].expect_program();
-
-            let mut new_prog = Vec::with_capacity(1 + prog.len());
-            new_prog.push(line);
-            new_prog.extend(prog);
-            Ast::Program(new_prog)
-        };
-
-        "line" => rules "symbol" ":" "arrow" => |mut toks| Ast::from_2(
-            &mut toks,
-            Ast::expect_symbol,
-            Ast::expect_arrow,
-            |symb, arrow| Ast::Line(Line {
-                position: symb.1,
-                name: symb.0,
-                expression: None,
-                arrow,
-            })
-        );
-        "line" => rules "symbol" ":=" "expr" => |mut toks| Ast::from_2(
-            &mut toks,
-            Ast::expect_symbol,
-            Ast::expect_expression,
-            |symb, expr| Ast::Line(Line {
-                position: symb.1,
-                name: symb.0,
-                expression: Some(expr),
-                arrow: (None, None),
-            })
-        );
-        "line" => rules "symbol" ":=" "expr" ":" "arrow" => |mut toks| Ast::from_3(
-            &mut toks,
-            Ast::expect_symbol,
-            Ast::expect_expression,
-            Ast::expect_arrow,
-            |symb, expr, arrow| Ast::Line(Line {
-                position: symb.1,
-                name: symb.0,
-                expression: Some(expr),
-                arrow,
-            }),
-        );
-
-        "arrow" => rules "type" "->" "type" => |mut toks| Ast::from_2(
-            &mut toks,
-            Ast::expect_type,
-            Ast::expect_type,
-            Ast::Arrow,
-        );
-
-        "expr" => rules "symbol" => |mut toks| {
-            if let Some(e) = propagate_errors(&toks) { return e; }
-            assert_eq!(toks.len(), 1);
-            if let Ast::Symbol { value, position } = mem::replace(&mut toks[0], Ast::Replaced) {
-                Ast::Expression(Expression::reference(value, position))
+/// Parse a type atom
+fn parse_type_atom(p: &mut Parser) -> Result<Option<Type>, ErrorSet> {
+    match p.peek().cloned() {
+        Some(Token::One) => {
+            p.advance();
+            Ok(Some(Type::One))
+        }
+        Some(Token::Two) => {
+            p.advance();
+            Ok(Some(Type::Two))
+        }
+        Some(Token::TwoExp(ref raw)) => {
+            let raw = raw.clone();
+            let position = p.current_position();
+            p.advance();
+            let exp_str = &raw[2..];
+            match str::parse::<u32>(exp_str) {
+                Ok(0) => Ok(Some(Type::One)),
+                Ok(1) => Ok(Some(Type::Two)),
+                Ok(2) => Ok(Some(Type::TwoTwoN(1))),
+                Ok(4) => Ok(Some(Type::TwoTwoN(2))),
+                Ok(8) => Ok(Some(Type::TwoTwoN(3))),
+                Ok(16) => Ok(Some(Type::TwoTwoN(4))),
+                Ok(32) => Ok(Some(Type::TwoTwoN(5))),
+                Ok(64) => Ok(Some(Type::TwoTwoN(6))),
+                Ok(128) => Ok(Some(Type::TwoTwoN(7))),
+                Ok(256) => Ok(Some(Type::TwoTwoN(8))),
+                Ok(512) => Ok(Some(Type::TwoTwoN(9))),
+                Ok(y) => Err(ErrorSet::single(position, Error::Bad2ExpNumber(y))),
+                Err(_) => Err(ErrorSet::single(position, Error::NumberOutOfRange(raw))),
+            }
+        }
+        Some(Token::LParen) => {
+            p.advance();
+            let ty = parse_type(p)?;
+            p.expect(&Token::RParen)?;
+            Ok(ty)
+        }
+        Some(Token::Symbol(_)) | Some(Token::Underscore) => {
+            let (name, _pos) = parse_symbol_value(p)?;
+            if name.as_ref() == "_" {
+                Ok(None)
             } else {
-                unreachable!("expected string, got something else")
+                Ok(Some(Type::Name(name.as_ref().to_owned())))
             }
-        };
-        "expr" => rules "?" "symbol" => |mut toks| {
-            if let Some(e) = propagate_errors(&toks) { return e; }
-            assert_eq!(toks.len(), 2);
-            if let Ast::Symbol { value, position } = mem::replace(&mut toks[1], Ast::Replaced) {
-                Ast::Expression(Expression {
-                    inner: ExprInner::Inline(node::Inner::Witness(WitnessOrHole::TypedHole(value))),
-                    position,
-                })
-            } else {
-                unreachable!("expected string, got something else")
-            }
-        };
-        "expr" => rules "(" "expr" ")" => |toks| toks[1].clone();
-        "expr" => rules "nullary" => Ast::from_combinator;
-        "expr" => rules "unary" "expr" => Ast::from_combinator;
-        "expr" => rules "binary" "expr" "expr" => Ast::from_combinator;
+        }
+        _ => Err(ErrorSet::single(
+            p.current_position(),
+            Error::ParseFailed(p.peek_raw_description()),
+        )),
+    }
+}
 
-        // TODO should we allow CMRs as literals for constant words?
-        "expr" => rules "const" "literal" => |mut toks| {
-            if let Some(e) = propagate_errors(&toks) { return e; }
-            assert_eq!(toks.len(), 2);
-            let (data, bit_length, position) = toks[1].expect_literal();
-            let mut iter = BitIter::from(data);
-
-            if bit_length.count_ones() != 1 || bit_length > 1 << 31 {
-                return Ast::Error(ErrorSet::single(
-                    position,
-                    Error::BadWordLength { bit_length },
-                ));
-            }
-            // unwrap ok here since literally every sequence of bits is a valid
-            // value for the given type
-            let word = Word::from_bits(&mut iter, bit_length.trailing_zeros()).unwrap();
-            Ast::Expression(Expression {
-                inner: ExprInner::Inline(node::Inner::Word(word)),
-                position,
-            })
-        };
-
-        "expr" => rules "assertl" "expr" "cmr" => |mut toks| {
-            if let Some(e) = propagate_errors(&toks) { return e; }
-            assert_eq!(toks.len(), 3);
-            let exp1 = toks[1].expect_expression();
-            let cmr2 = toks[2].expect_cmr();
-            Ast::Expression(Expression {
-                inner: ExprInner::AssertL(Arc::new(exp1), cmr2),
-                position: toks[0].expect_position(),
-            })
-        };
-        "expr" => rules "assertr" "cmr" "expr" => |mut toks| {
-            if let Some(e) = propagate_errors(&toks) { return e; }
-            assert_eq!(toks.len(), 3);
-            let cmr1 = toks[1].expect_cmr();
-            let exp2 = toks[2].expect_expression();
-            Ast::Expression(Expression {
-                inner: ExprInner::AssertR(cmr1, Arc::new(exp2)),
-                position: toks[0].expect_position(),
-            })
-        };
-
-        "expr" => rules "fail" "literal" => |mut toks| {
-            if let Some(e) = propagate_errors(&toks) { return e; }
-            assert_eq!(toks.len(), 2);
-            let (value, bit_length, position) = toks[1].expect_literal();
-            if bit_length < 128 {
-                Ast::Error(ErrorSet::single(
-                    position,
-                    Error::EntropyInsufficient { bit_length },
-                ))
-            } else if bit_length > 512 {
-                Ast::Error(ErrorSet::single(
-                    position,
-                    Error::EntropyTooMuch { bit_length },
-                ))
-            } else {
-                let mut entropy = [0; 64];
-                entropy[..value.len()].copy_from_slice(&value[..]);
-                let entropy = FailEntropy::from_byte_array(entropy);
-                Ast::Expression(Expression {
-                    inner: ExprInner::Inline(node::Inner::Fail(entropy)),
-                    position,
-                })
-            }
-        };
-
-        "cmr" => rules "#{" "expr" "}" => |mut toks| {
-            if let Some(e) = propagate_errors(&toks) { return e; }
-            assert_eq!(toks.len(), 3);
-            let exp = toks[1].expect_expression();
-            Ast::Cmr(AstCmr::Expr(Arc::new(exp)))
-        };
-        "cmr" => rules "CMRLIT";
-
-
-        "type" => rules "symbol" => |mut toks| Ast::from_1(
-            &mut toks,
-            Ast::expect_symbol,
-            |name| {
-                if name.0.as_ref() == "_" {
-                    Ast::Type(None)
-                } else {
-                    // Type names are stored as Strings, but we normally use Arc<str>
-                    // in the parser. So we need to do an extra conversion.
-                    Ast::Type(Some(Type::Name(name.0.as_ref().to_owned())))
-                }
-            },
-        );
-        "type" => rules "1";
-        "type" => rules "2";
-        "type" => rules "2EXP";
-        "type" => rules "(" "type" ")" => |mut toks| Ast::from_1(
-            &mut toks[1..2],
-            Ast::expect_type,
-            Ast::Type,
-        );
-        "type" => rules "type" "+" "type" => |mut toks| Ast::from_2(
-            &mut toks,
-            Ast::expect_type,
-            Ast::expect_type,
-            |t1, t2| Ast::Type(t1.zip(t2).map(|(t1, t2)| Type::Sum(Box::new(t1), Box::new(t2)))),
-        );
-        "type" => rules "type" "*" "type" => |mut toks| Ast::from_2(
-            &mut toks,
-            Ast::expect_type,
-            Ast::expect_type,
-            |t1, t2| Ast::Type(t1.zip(t2).map(|(t1, t2)| Type::Product(Box::new(t1), Box::new(t2)))),
-        );
-
-        // Turn lexemes into rules
-        "nullary" => lexemes "NULLARY" => Ast::from_combinator_lexeme;
-        "unary" => lexemes "UNARY" => Ast::from_combinator_lexeme;
-        "binary" => lexemes "BINARY" => Ast::from_combinator_lexeme;
-        "const" => lexemes "CONST" => Ast::from_dummy_lexeme;
-        "assertl" => lexemes "ASSERTL" => Ast::from_combinator_lexeme;
-        "assertr" => lexemes "ASSERTR" => Ast::from_combinator_lexeme;
-        "fail" => lexemes "FAIL" => Ast::from_combinator_lexeme;
-
-        "literal" => lexemes "LITERAL" => Ast::from_literal_lexeme;
-        "literal" => lexemes "_" => Ast::from_literal_lexeme;
-
-        "#{" => lexemes "#{" => Ast::from_dummy_lexeme;
-        "}" => lexemes "}" => Ast::from_dummy_lexeme;
-        "CMRLIT" => lexemes "CMRLIT" => Ast::from_cmr_literal_lexeme;
-
-        "symbol" => lexemes "_" => |lexemes| {
-            assert_eq!(lexemes.len(), 1);
-            Ast::Symbol {
-                value: Arc::from(lexemes[0].raw.as_str()),
-                position: (&lexemes[0].position).into(),
-            }
-        };
-        "symbol" => lexemes "SYMBOL" => |lexemes| {
-            assert_eq!(lexemes.len(), 1);
-            Ast::Symbol {
-                value: Arc::from(lexemes[0].raw.as_str()),
-                position: (&lexemes[0].position).into(),
-            }
-        };
-
-        "(" => lexemes "(" => Ast::from_dummy_lexeme;
-        ")" => lexemes ")" => Ast::from_dummy_lexeme;
-        "+" => lexemes "+" => Ast::from_dummy_lexeme;
-        "*" => lexemes "*" => Ast::from_dummy_lexeme;
-        ":" => lexemes ":" => Ast::from_dummy_lexeme;
-        "->" => lexemes "->" => Ast::from_dummy_lexeme;
-
-        "1" => lexemes "1" => Ast::from_type_lexeme;
-        "2" => lexemes "2" => Ast::from_type_lexeme;
-        "2EXP" => lexemes "2EXP" => Ast::from_type_lexeme;
-
-        ":=" => lexemes ":=" => Ast::from_dummy_lexeme;
-
-        "#" => lexemes "#" => Ast::from_dummy_lexeme;
-        "?" => lexemes "?" => Ast::from_dummy_lexeme;
-
-        // Define associativity rules for type constructors
-        Associativity::Left => rules "+";
-        Associativity::Left => rules "*";
-    )
+/// Consume a token that represents a symbol name and return it
+fn parse_symbol_value(p: &mut Parser) -> Result<(Arc<str>, Position), ErrorSet> {
+    let position = p.current_position();
+    match p.peek().cloned() {
+        Some(Token::Symbol(ref s)) => {
+            let s: Arc<str> = Arc::from(s.as_str());
+            p.advance();
+            Ok((s, position))
+        }
+        Some(Token::Underscore) => {
+            p.advance();
+            Ok((Arc::from("_"), position))
+        }
+        _ => Err(ErrorSet::single(
+            position,
+            Error::ParseFailed(p.peek_raw_description()),
+        )),
+    }
 }
 
 #[cfg(test)]
