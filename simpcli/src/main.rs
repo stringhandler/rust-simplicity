@@ -12,14 +12,15 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
-use simplicity::dag::{DagLike, MaxSharing};
+use simplicity::dag::{DagLike, InternalSharing, MaxSharing, NoSharing};
 use simplicity::jet::Jet;
-use simplicity::effects::{annotate_commit, malleability_analysis, missing_write_effects, BranchArm, TransactionField};
+use simplicity::effects::{annotate_commit, malleability_analysis, missing_write_effects, pruneable_nodes, BranchArm, TransactionField};
 use simplicity::human_encoding::Forest;
 use simplicity::node::{CommitNode, Inner};
 use simplicity::{self, BitIter};
 
 use simplicity::base64::engine::general_purpose::STANDARD;
+use std::collections::HashMap;
 use std::str::FromStr;
 use std::{env, fs};
 
@@ -32,6 +33,7 @@ fn usage(process_name: &str) {
     eprintln!("  {} assemble <filename>", process_name);
     eprintln!("  {} disassemble <base64>", process_name);
     eprintln!("  {} effects <filename|base64>", process_name);
+    eprintln!("  {} flowchart <filename|base64>", process_name);
     eprintln!("  {} mermaid <filename|base64>", process_name);
     eprintln!("  {} graph <base64>", process_name);
     eprintln!("  {} relabel <base64>", process_name);
@@ -50,6 +52,7 @@ enum Command {
     Assemble,
     Disassemble,
     Effects,
+    Flowchart,
     Graph,
     Mermaid,
     Relabel,
@@ -63,6 +66,7 @@ impl FromStr for Command {
             "assemble" => Ok(Command::Assemble),
             "disassemble" => Ok(Command::Disassemble),
             "effects" => Ok(Command::Effects),
+            "flowchart" => Ok(Command::Flowchart),
             "mermaid" => Ok(Command::Mermaid),
             "graphviz" | "dot" | "graph" => Ok(Command::Graph),
             "relabel" => Ok(Command::Relabel),
@@ -78,6 +82,7 @@ impl Command {
             Command::Assemble => false,
             Command::Disassemble => false,
             Command::Effects => false,
+            Command::Flowchart => false,
             Command::Graph => false,
             Command::Mermaid => false,
             Command::Relabel => false,
@@ -231,6 +236,183 @@ fn main() -> Result<(), String> {
                 for field in &malleability.uncovered {
                     println!("  {}", field);
                 }
+            }
+
+            // ── Pruneable subtrees ────────────────────────────────────────
+            // A node is pruneable when its output type is Unit and the subtree
+            // has no side effects, so it is equivalent to a bare `unit`.
+            // We report only top-level roots: if a pruneable node's parent is
+            // also pruneable, it is already subsumed and not shown separately.
+            let pruneable = pruneable_nodes(&summaries);
+            if !pruneable.is_empty() {
+                let pruneable_set: std::collections::HashSet<usize> =
+                    pruneable.iter().map(|p| p.node_index).collect();
+                let mut subsumed: std::collections::HashSet<usize> =
+                    std::collections::HashSet::new();
+                for item in (&*commit).post_order_iter::<MaxSharing<simplicity::node::Commit<DefaultJet>>>() {
+                    if pruneable_set.contains(&item.index) {
+                        if let Some(l) = item.left_index { subsumed.insert(l); }
+                        if let Some(r) = item.right_index { subsumed.insert(r); }
+                    }
+                }
+                let top_level: Vec<_> = pruneable.iter()
+                    .filter(|p| !subsumed.contains(&p.node_index))
+                    .collect();
+                println!();
+                println!("=== WARNING: pruneable subtrees ===");
+                println!("  {} subtree(s) have return type Unit with no side effects", top_level.len());
+                println!("  and can each be replaced with a bare `unit` node:");
+                for p in &top_level {
+                    println!("  node #{}", p.node_index);
+                }
+            }
+        }
+        Command::Flowchart => {
+            let commit = parse_commit(&first_arg)?;
+
+            // annotate_commit uses MaxSharing indices internally. Build a pointer→summary
+            // map so we can look up effects during the NoSharing traversal, which assigns
+            // different (higher) indices to revisited nodes.
+            let summaries_vec = annotate_commit(&commit);
+            let mut summaries: HashMap<usize, simplicity::effects::EffectSummary> = HashMap::new();
+            for item in (&*commit).post_order_iter::<MaxSharing<simplicity::node::Commit<DefaultJet>>>() {
+                summaries.insert(item.node as *const _ as usize, summaries_vec[item.index].clone());
+            }
+
+            // Build an effect suffix string for a node label (HTML newlines for Mermaid).
+            let effect_suffix = |ptr: usize| -> String {
+                let Some(s) = summaries.get(&ptr) else { return String::new() };
+                let mut parts = Vec::<String>::new();
+                if s.can_fail { parts.push("[can fail]".to_owned()); }
+                if !s.reads.is_empty() { parts.push(format!("reads {} fields", s.reads.len())); }
+                if parts.is_empty() { String::new() } else { format!("<br/>{}", parts.join("<br/>")) }
+            };
+
+            // For each node, track its entry and exit point in the Mermaid diagram.
+            // Leaves use the same node ID for both. Structural combinators may use
+            // separate split/join nodes.
+            struct FlowInfo {
+                start: String,
+                end: String,
+            }
+            let mut flow: Vec<FlowInfo> = Vec::new();
+            let mut node_defs: Vec<String> = Vec::new();
+            let mut edges: Vec<String> = Vec::new();
+            // Red node IDs collected separately so they override the green jet style.
+            let mut red_nodes: Vec<String> = Vec::new();
+
+            for item in (&*commit).post_order_iter::<NoSharing>() {
+                let i = item.index;
+                let nid = format!("N{}", i);
+                let ptr = item.node as *const _ as usize;
+                let can_fail = summaries.get(&ptr).map_or(false, |s| s.can_fail);
+
+                match item.node.inner() {
+                    // comp: sequential — s feeds into t
+                    Inner::Comp(_, _) => {
+                        let s = &flow[item.left_index.unwrap()];
+                        let t = &flow[item.right_index.unwrap()];
+                        edges.push(format!("  {} --> {}", s.end, t.start));
+                        flow.push(FlowInfo { start: s.start.clone(), end: t.end.clone() });
+                    }
+
+                    // pair: parallel — split into s and t, then join
+                    Inner::Pair(_, _) | Inner::Disconnect(_, _) => {
+                        let s = &flow[item.left_index.unwrap()];
+                        let t = &flow[item.right_index.unwrap()];
+                        let split_id = format!("SP{}", i);
+                        let join_id = format!("J{}", i);
+                        let out_type = item.node.cached_data().arrow().target.to_string().replace('×', "*");
+                        let suffix = effect_suffix(ptr);
+                        node_defs.push(format!("  {}(\"[{}] pair\")", split_id, i));
+                        node_defs.push(format!("  {}(\"[{}] -&gt; {}{}\")", join_id, i, out_type, suffix));
+                        edges.push(format!("  {} --> {}", split_id, s.start));
+                        edges.push(format!("  {} --> {}", split_id, t.start));
+                        edges.push(format!("  {} --> {}", s.end, join_id));
+                        edges.push(format!("  {} --> {}", t.end, join_id));
+                        if can_fail { red_nodes.push(join_id.clone()); }
+                        flow.push(FlowInfo { start: split_id, end: join_id });
+                    }
+
+                    // case: conditional branch — decision routes to s or t, then join
+                    Inner::Case(_, _) => {
+                        let s = &flow[item.left_index.unwrap()];
+                        let t = &flow[item.right_index.unwrap()];
+                        let dec_id = format!("D{}", i);
+                        let join_id = format!("J{}", i);
+                        let out_type = item.node.cached_data().arrow().target.to_string().replace('×', "*");
+                        let suffix = effect_suffix(ptr);
+                        node_defs.push(format!("  {}{{\"[{}] case\"}}", dec_id, i));
+                        node_defs.push(format!("  {}(\"[{}] -&gt; {}{}\")", join_id, i, out_type, suffix));
+                        edges.push(format!("  {} -->|left| {}", dec_id, s.start));
+                        edges.push(format!("  {} -->|right| {}", dec_id, t.start));
+                        edges.push(format!("  {} --> {}", s.end, join_id));
+                        edges.push(format!("  {} --> {}", t.end, join_id));
+                        if can_fail { red_nodes.push(join_id.clone()); }
+                        flow.push(FlowInfo { start: dec_id, end: join_id });
+                    }
+
+                    // Unary wrappers: child flows through, then this node
+                    Inner::InjL(_) | Inner::InjR(_) | Inner::Take(_) | Inner::Drop(_)
+                    | Inner::AssertL(_, _) | Inner::AssertR(_, _) => {
+                        let base_label = match item.node.inner() {
+                            Inner::InjL(_) => "injL",
+                            Inner::InjR(_) => "injR",
+                            Inner::Take(_) => "take",
+                            Inner::Drop(_) => "drop",
+                            Inner::AssertL(_, _) => "assertL",
+                            Inner::AssertR(_, _) => "assertR",
+                            _ => unreachable!(),
+                        };
+                        let suffix = effect_suffix(ptr);
+                        let child = &flow[item.left_index.unwrap()];
+                        node_defs.push(format!("  {}[\"[{}] {}{}\"]", nid, i, base_label, suffix));
+                        if can_fail { red_nodes.push(nid.clone()); }
+                        edges.push(format!("  {} --> {}", child.end, nid));
+                        flow.push(FlowInfo { start: child.start.clone(), end: nid });
+                    }
+
+                    // Leaves: single box
+                    _ => {
+                        let is_jet = matches!(item.node.inner(), Inner::Jet(_));
+                        let base_label = match item.node.inner() {
+                            Inner::Iden => "iden".to_owned(),
+                            Inner::Unit => "unit".to_owned(),
+                            Inner::Witness(_) => "witness".to_owned(),
+                            Inner::Fail(_) => "fail".to_owned(),
+                            Inner::Word(w) => format!("const({}b)", w.len()),
+                            Inner::Jet(j) => format!("{}", j),
+                            _ => "?".to_owned(),
+                        };
+                        let suffix = effect_suffix(ptr);
+                        node_defs.push(format!("  {}[\"[{}] {}{}\"]", nid, i, base_label, suffix));
+                        if is_jet {
+                            node_defs.push(format!("  style {} fill:#2a7,color:#fff,stroke:#195", nid));
+                        }
+                        if can_fail { red_nodes.push(nid.clone()); }
+                        flow.push(FlowInfo { start: nid.clone(), end: nid });
+                    }
+                }
+            }
+
+            // The last node visited in post-order is the root.
+            let root_start = flow.last().map(|f| f.start.clone()).unwrap_or_default();
+            let root_end = flow.last().map(|f| f.end.clone()).unwrap_or_default();
+
+            println!("%%{{init: {{\"flowchart\": {{\"defaultRenderer\": \"elk\"}}, \"elk\": {{\"elk.layered.layering.strategy\": \"LONGEST_PATH\"}}}}}}%%");
+            println!("flowchart TD");
+            println!("  START([START])");
+            println!("  END([END])");
+            println!("  START --> {}", root_start);
+            println!("  {} --> END", root_end);
+            for def in &node_defs {
+                println!("{}", def);
+            }
+            for edge in &edges {
+                println!("{}", edge);
+            }
+            for id in &red_nodes {
+                println!("  style {} fill:#cc0000,color:#fff,stroke:#880000", id);
             }
         }
         Command::Mermaid => {
