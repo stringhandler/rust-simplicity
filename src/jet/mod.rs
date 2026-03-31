@@ -14,10 +14,17 @@
 
 #[cfg(feature = "bitcoin")]
 pub mod bitcoin;
+pub mod core;
 #[cfg(feature = "elements")]
 pub mod elements;
 mod init;
 pub mod type_name;
+
+pub use self::core::CoreEnv;
+#[cfg(feature = "bitcoin")]
+pub use crate::jet::bitcoin::BitcoinEnv;
+#[cfg(feature = "elements")]
+pub use elements::ElementsTxEnv;
 
 #[cfg(feature = "bitcoin")]
 pub use init::bitcoin::Bitcoin;
@@ -47,6 +54,23 @@ impl std::fmt::Display for JetFailed {
 }
 
 impl std::error::Error for JetFailed {}
+
+/// An environment for jets to read.
+pub trait JetEnvironment {
+    /// The type of jet that this environment supports.
+    type Jet: Jet;
+
+    /// CJetEnvironment to interact with C FFI.
+    type CJetEnvironment;
+
+    /// Obtains a C FFI compatible environment for the jet.
+    fn c_jet_env(&self) -> &Self::CJetEnvironment;
+
+    /// Obtain the FFI C pointer for the jet.
+    fn c_jet_ptr(
+        jet: &Self::Jet,
+    ) -> &dyn Fn(&mut CFrameItem, CFrameItem, &Self::CJetEnvironment) -> bool;
+}
 
 /// Family of jets that share an encoding scheme and execution environment.
 ///
@@ -91,7 +115,7 @@ pub trait Jet:
 
 #[cfg(test)]
 mod tests {
-    use crate::jet::Core;
+    use crate::jet::{Core, CoreEnv};
     use crate::node::{ConstructNode, CoreConstructible, JetConstructible};
     use crate::types;
     use crate::value::Word;
@@ -111,7 +135,7 @@ mod tests {
             )
             .unwrap();
             assert_eq!(
-                BitMachine::test_exec(two_words, &()).expect("executing"),
+                BitMachine::test_exec(two_words, &CoreEnv::new()).expect("executing"),
                 Value::product(
                     Value::u1(0),       // carry bit
                     Value::u32(2 + 16), // result
@@ -129,7 +153,7 @@ mod tests {
             )
             .unwrap();
             assert_eq!(
-                BitMachine::test_exec(two_words, &()).expect("executing"),
+                BitMachine::test_exec(two_words, &CoreEnv::new()).expect("executing"),
                 Value::product(Value::u32(2), Value::u16(16)),
             );
         });
