@@ -15,9 +15,7 @@ With that said, the rest of the document defines the encoding.
 
 ## Syntax
 
-The syntax is defined in `src/human_encoding/parse/ast.rs`. It currently uses the
-`santiago` parser generator, but we would like to move away from this, probably to
-an ad-hoc parser, to avoid poor asymptotic behavior and to get better error messages.
+The syntax is defined in `src/human_encoding/parse/ast.rs`.
 
 Comments are started by `--` and end at the next newline. This is the only aspect
 in which whitespace is significant.

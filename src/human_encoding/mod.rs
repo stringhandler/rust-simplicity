@@ -24,31 +24,16 @@ pub use self::error::{Error, ErrorSet};
 pub use self::named_node::NamedCommitNode;
 
 /// Line/column pair
-///
-/// There is a similar type provided by the `santiago` library but it does not implement
-/// `Copy`, among many other traits, which makes it unergonomic to use. Santiago positions
-/// can be converted using `.into()`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
 pub struct Position {
     line: usize,
     column: usize,
 }
 
-impl<'a> From<&'a santiago::lexer::Position> for Position {
-    fn from(position: &'a santiago::lexer::Position) -> Position {
-        Position {
-            line: position.line,
-            column: position.column,
-        }
-    }
-}
-
-impl From<santiago::lexer::Position> for Position {
-    fn from(position: santiago::lexer::Position) -> Position {
-        Position {
-            line: position.line,
-            column: position.column,
-        }
+impl Position {
+    /// Create a new position from line and column.
+    pub fn new(line: usize, column: usize) -> Self {
+        Position { line, column }
     }
 }
 
