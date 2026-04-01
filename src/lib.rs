@@ -90,6 +90,7 @@ mod analysis;
 mod bit_encoding;
 pub mod bit_machine;
 pub mod dag;
+#[cfg(feature = "human_encoding")]
 pub mod human_encoding;
 pub mod jet;
 mod merkle;

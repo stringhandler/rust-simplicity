@@ -610,13 +610,14 @@ impl<J: Jet> RedeemNode<J> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "human_encoding")]
     use crate::human_encoding::Forest;
     use crate::jet::Core;
     use crate::node::SimpleFinalizer;
-    use crate::types::Final;
     use hex::DisplayHex;
-    use std::collections::HashMap;
     use std::fmt;
+    #[cfg(all(feature = "elements", feature = "human_encoding"))]
+    use {crate::types::Final, std::collections::HashMap};
 
     #[cfg_attr(not(feature = "base64"), allow(unused_variables))]
     #[track_caller]
@@ -965,7 +966,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "elements")]
+    #[cfg(all(feature = "elements", feature = "human_encoding"))]
     fn assert_correct_pruning<JE: JetEnvironment>(
         unpruned_prog: &str,
         unpruned_wit: &HashMap<Arc<str>, Value>,
@@ -1017,7 +1018,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "elements")]
+    #[cfg(all(feature = "elements", feature = "human_encoding"))]
     fn prune() {
         use crate::jet::ElementsTxEnv;
 

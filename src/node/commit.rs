@@ -309,11 +309,11 @@ mod tests {
     use std::fmt;
 
     use crate::decode::Error;
-    use crate::human_encoding::Forest;
-    use crate::jet::{Core, CoreEnv};
-    use crate::node::SimpleFinalizer;
-    use crate::{BitMachine, Value};
+    use crate::jet::Core;
+    #[cfg(feature = "human_encoding")]
+    use crate::{human_encoding::Forest, jet::CoreEnv, node::SimpleFinalizer, BitMachine, Value};
 
+    #[cfg(feature = "human_encoding")]
     #[cfg_attr(not(feature = "base64"), allow(unused_variables))]
     #[track_caller]
     fn assert_program_deserializable<J: Jet>(
@@ -473,6 +473,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "human_encoding")]
     fn shared_witnesses() {
         assert_program_deserializable::<Core>(
             "main := witness",
@@ -577,6 +578,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "human_encoding")]
     fn regression_177() {
         // `case (drop iden) iden` from upstream occurs-check test. Has an infinitely sized
         // input type. Will fail trying to unify the input type with the unit type before
