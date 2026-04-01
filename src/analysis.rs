@@ -152,14 +152,33 @@ impl Cost {
             return None;
         }
 
-        // Two bytes are automatically added to the encoded witness stack by adding the annex:
+        // Adding the annex to the witness stack increases the serialized size by:
         //
-        // 1. The encoded annex starts with the annex byte length
-        // 2. The first annex byte is always 0x50
+        // 1. CompactSize(annex_len): the length prefix of the annex item
+        // 2. annex_len: the annex bytes themselves (0x50 tag + zero padding)
         //
-        // The remaining padding is done by adding (zero) bytes to the annex.
-        let required_padding = weight - budget - U32Weight(2);
-        let padding_len = required_padding.0 as usize; // cast safety: 32-bit machine or higher
+        // CompactSize uses 1 byte for values <= 252, 3 bytes for <= 65535,
+        // and 5 bytes for larger values. The overhead subtracted must account
+        // for the actual CompactSize encoding length of the resulting annex.
+        let deficit = (weight - budget).0 as usize; // cast safety: 32-bit machine or higher
+
+        // overhead = compact_size_len + 1 (for 0x50 tag)
+        let padding_len = match deficit {
+            // annex_len <= 252, compact_size uses 1 byte, overhead = 2
+            0..=253 => deficit.saturating_sub(2),
+            // Boundary region: annex must be >= 253 bytes (3-byte compact_size),
+            // but deficit - 4 < 252. Use minimum padding for 3-byte encoding.
+            254..=255 => 252,
+            // annex_len in 253..=65535, compact_size uses 3 bytes, overhead = 4
+            256..=65538 => deficit - 4,
+            // Boundary region for 5-byte compact_size encoding.
+            65539..=65540 => 65535,
+            // annex_len >= 65536, compact_size uses 5 bytes, overhead = 6
+            _ => deficit - 6,
+            // Note: the 9-byte compact_size boundary (deficit > 4_294_967_300)
+            // is unreachable because Cost uses u32 milliweight, limiting the
+            // maximum deficit to ~4_294_968 weight units.
+        };
         let annex_bytes: Vec<u8> = std::iter::once(0x50)
             .chain(std::iter::repeat(0x00).take(padding_len))
             .collect();
@@ -435,6 +454,31 @@ mod tests {
             (Cost::from_milliweight(empty + 4_000), vec![], Some(3)),
             (Cost::from_milliweight(empty + 4_001), vec![], Some(4)),
             (Cost::from_milliweight(empty + 50_000), vec![], Some(49)),
+            // Test around CompactSize boundary (annex_len crossing 252 -> 253)
+            // deficit = 253: annex_len = 252, compact_size = 1 byte, overhead = 2
+            (Cost::from_milliweight(empty + 253_000), vec![], Some(252)),
+            // deficit = 254: annex_len must be 253 (3-byte compact_size), overhead = 4
+            (Cost::from_milliweight(empty + 254_000), vec![], Some(253)),
+            // deficit = 255: same boundary case
+            (Cost::from_milliweight(empty + 255_000), vec![], Some(253)),
+            // deficit = 256: annex_len = 253, compact_size = 3, exact fit
+            (Cost::from_milliweight(empty + 256_000), vec![], Some(253)),
+            // deficit = 257: annex_len = 254
+            (Cost::from_milliweight(empty + 257_000), vec![], Some(254)),
+            // Large annex (exercises the 3-byte compact_size path)
+            (
+                Cost::from_milliweight(empty + 7_424_000),
+                vec![],
+                Some(7_421),
+            ),
+            // Hash loop example
+            (
+                Cost::from_milliweight(8_045_103),
+                vec![vec![], vec![0; 497], vec![0; 32], vec![0; 33]],
+                Some(7_424),
+            ),
+            // Max
+            (Cost::CONSENSUS_MAX, vec![], Some(3_999_994)),
         ];
 
         for (cost, mut witness, maybe_padding) in test_vectors {
