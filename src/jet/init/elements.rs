@@ -980,107 +980,108 @@ type Out = crate::effects::OutputSelector;
 // ── Input sub-hashes (env.c: per-input loop) ─────────────────────────────────
 
 /// `inputOutpointsHash`: isPegin, pegin, prevOutpoint.txid, prevOutpoint.ix
-fn input_outpoints_hash_fields() -> Vec<F> {
-    vec![F::InputPrevOutpoint(In::All), F::InputPegin(In::All)]
+fn input_outpoints_hash_fields(selector: In) -> Vec<F> {
+    vec![F::InputPrevOutpoint(selector.clone()), F::InputPegin(selector)]
 }
 
 /// `inputSequencesHash`: sequence
-fn input_sequences_hash_fields() -> Vec<F> {
-    vec![F::InputSequence(In::All)]
+fn input_sequences_hash_fields(selector: In) -> Vec<F> {
+    vec![F::InputSequence(selector)]
 }
 
 /// `inputAnnexesHash`: hasAnnex, annexHash
-fn input_annexes_hash_fields() -> Vec<F> {
-    vec![F::InputAnnexHash(In::All)]
+fn input_annexes_hash_fields(selector: In) -> Vec<F> {
+    vec![F::InputAnnexHash(selector)]
 }
 
 /// `inputScriptSigsHash`: scriptSigHash
-fn input_script_sigs_hash_fields() -> Vec<F> {
-    vec![F::InputScriptSigHash(In::All)]
+fn input_script_sigs_hash_fields(selector: In) -> Vec<F> {
+    vec![F::InputScriptSigHash(selector)]
 }
 
 /// `inputAssetAmountsHash`: txo.asset, txo.amt
-fn input_asset_amounts_hash_fields() -> Vec<F> {
-    vec![F::InputAsset(In::All), F::InputAmount(In::All)]
+fn input_asset_amounts_hash_fields(selector: In) -> Vec<F> {
+    vec![F::InputAsset(selector.clone()), F::InputAmount(selector)]
 }
 
 /// `inputScriptsHash`: txo.scriptPubKey
-fn input_scripts_hash_fields() -> Vec<F> {
-    vec![F::InputScriptHash(In::All)]
+fn input_scripts_hash_fields(selector: In) -> Vec<F> {
+    vec![F::InputScriptHash(selector)]
 }
 
 /// `input_hash` jet: isPegin, pegin, prevOutpoint, sequence, hasAnnex, annexHash
 /// (C: `rustsimplicity_0_6_input_hash`, elementsJets.c:1210)
 fn input_hash_fields() -> Vec<F> {
-    todo!("fill in singular form")
+    let mut v = input_outpoints_hash_fields(In::Indexed);
+    v.extend(input_sequences_hash_fields(In::Indexed));
+    v.extend(input_annexes_hash_fields(In::Indexed));
+    v
 }
 
 /// `input_utxo_hash` jet: txo.asset, txo.amt, txo.scriptPubKey
 /// (C: `rustsimplicity_0_6_input_utxo_hash`, elementsJets.c:1164)
 fn input_utxo_hash_fields() -> Vec<F> {
-    // let mut v = input_asset_amounts_hash_fields();
-    // v.extend(input_scripts_hash_fields());
-    // v
-    todo!("single field check")
+    let mut v = input_asset_amounts_hash_fields(In::Indexed);
+    v.extend(input_scripts_hash_fields(In::Indexed));
+    v
 }
 
 /// `inputs_hash` jet: hash(inputOutpointsHash ‖ inputSequencesHash ‖ inputAnnexesHash)
 /// (C: env.c:473-476)
 fn inputs_hash_fields() -> Vec<F> {
-    let mut v = input_outpoints_hash_fields();
-    v.extend(input_sequences_hash_fields());
-    v.extend(input_annexes_hash_fields());
+    let mut v = input_outpoints_hash_fields(In::All);
+    v.extend(input_sequences_hash_fields(In::All));
+    v.extend(input_annexes_hash_fields(In::All));
     v
 }
 
 /// `input_utxos_hash` jet: hash(inputAssetAmountsHash ‖ inputScriptsHash)
 /// (C: env.c:469-471)
 fn input_utxos_hash_fields() -> Vec<F> {
-    let mut v = input_asset_amounts_hash_fields();
-    v.extend(input_scripts_hash_fields());
+    let mut v = input_asset_amounts_hash_fields(In::All);
+    v.extend(input_scripts_hash_fields(In::All));
     v
 }
 
 // ── Issuance sub-hashes (env.c: per-input issuance loop) ─────────────────────
 
 /// `issuanceAssetAmountsHash`: issuance.type, issuance.assetId, issuance.assetAmt
-fn issuance_asset_amounts_hash_fields() -> Vec<F> {
-    vec![F::IssuancePresent(In::All), F::IssuanceAssetAmount(In::All)]
+fn issuance_asset_amounts_hash_fields(selector: In) -> Vec<F> {
+    vec![F::IssuancePresent(selector.clone()), F::IssuanceAssetAmount(selector)]
 }
 
 /// `issuanceTokenAmountsHash`: issuance.type, issuance.tokenId, issuance.tokenAmt
-fn issuance_token_amounts_hash_fields() -> Vec<F> {
-    vec![F::IssuancePresent(In::All), F::IssuanceTokenAmount(In::All)]
+fn issuance_token_amounts_hash_fields(selector: In) -> Vec<F> {
+    vec![F::IssuancePresent(selector.clone()), F::IssuanceTokenAmount(selector)]
 }
 
 /// `issuanceRangeProofsHash`: assetRangeProofHash, tokenRangeProofHash
-fn issuance_range_proofs_hash_fields() -> Vec<F> {
+fn issuance_range_proofs_hash_fields(selector: In) -> Vec<F> {
     vec![
-        F::IssuanceAssetProof(In::All),
-        F::IssuanceTokenProof(In::All),
+        F::IssuanceAssetProof(selector.clone()),
+        F::IssuanceTokenProof(selector),
     ]
 }
 
 /// `issuanceBlindingEntropyHash`: issuance.type, blindingNonce, contractHash, entropy
-fn issuance_blinding_entropy_hash_fields() -> Vec<F> {
+fn issuance_blinding_entropy_hash_fields(selector: In) -> Vec<F> {
     vec![
-        F::IssuancePresent(In::All),
-        F::ReissuanceBlinding(In::All),
-        F::NewIssuanceContract(In::All),
-        F::IssuanceEntropy(In::All),
-        F::ReissuanceEntropy(In::All),
+        F::IssuancePresent(selector.clone()),
+        F::ReissuanceBlinding(selector.clone()),
+        F::NewIssuanceContract(selector.clone()),
+        F::IssuanceEntropy(selector.clone()),
+        F::ReissuanceEntropy(selector),
     ]
 }
 
 /// `issuance_hash` jet: full issuance data for one indexed input
 /// (C: `rustsimplicity_0_6_issuance_hash`, elementsJets.c:1275)
 fn issuance_hash_fields() -> Vec<F> {
-    // let mut v = issuance_asset_amounts_hash_fields();
-    // v.extend(issuance_token_amounts_hash_fields());
-    // v.extend(issuance_range_proofs_hash_fields());
-    // v.extend(issuance_blinding_entropy_hash_fields());
-    // v
-    todo!("Implement single")
+    let mut v = issuance_asset_amounts_hash_fields(In::Indexed);
+    v.extend(issuance_token_amounts_hash_fields(In::Indexed));
+    v.extend(issuance_range_proofs_hash_fields(In::Indexed));
+    v.extend(issuance_blinding_entropy_hash_fields(In::Indexed));
+    v
 }
 
 /// `issuances_hash` jet: hash(issuanceAssetAmountsHash ‖ issuanceTokenAmountsHash
@@ -1088,10 +1089,10 @@ fn issuance_hash_fields() -> Vec<F> {
 /// (C: env.c:483-487)
 fn issuances_hash_fields() -> Vec<F> {
     // NOTE: plural issuances.
-    let mut v = issuance_asset_amounts_hash_fields();
-    v.extend(issuance_token_amounts_hash_fields());
-    v.extend(issuance_range_proofs_hash_fields());
-    v.extend(issuance_blinding_entropy_hash_fields());
+    let mut v = issuance_asset_amounts_hash_fields(In::All);
+    v.extend(issuance_token_amounts_hash_fields(In::All));
+    v.extend(issuance_range_proofs_hash_fields(In::All));
+    v.extend(issuance_blinding_entropy_hash_fields(In::All));
     v
 }
 
@@ -8869,12 +8870,12 @@ impl Jet for Elements {
             Elements::InputSequence => vec![TF::InputSequence(Indexed)],
             // ── Input aggregate hash jets ─────────────────────────────────
             Elements::AnnexHash => vec![],
-            Elements::InputAmountsHash => input_asset_amounts_hash_fields(),
-            Elements::InputAnnexesHash => input_annexes_hash_fields(),
-            Elements::InputOutpointsHash => input_outpoints_hash_fields(),
-            Elements::InputScriptSigsHash => input_script_sigs_hash_fields(),
-            Elements::InputScriptsHash => input_scripts_hash_fields(),
-            Elements::InputSequencesHash => input_sequences_hash_fields(),
+            Elements::InputAmountsHash => input_asset_amounts_hash_fields(In::All),
+            Elements::InputAnnexesHash => input_annexes_hash_fields(In::All),
+            Elements::InputOutpointsHash => input_outpoints_hash_fields(In::All),
+            Elements::InputScriptSigsHash => input_script_sigs_hash_fields(In::All),
+            Elements::InputScriptsHash => input_scripts_hash_fields(In::All),
+            Elements::InputSequencesHash => input_sequences_hash_fields(In::All),
             // `input_utxo_hash`: txo.asset, txo.amt, txo.scriptPubKey
             Elements::InputUtxoHash => input_utxo_hash_fields(),
             // `input_utxos_hash`: hash(inputAssetAmountsHash ‖ inputScriptsHash)
@@ -8896,10 +8897,10 @@ impl Jet for Elements {
             Elements::ReissuanceBlinding => vec![TF::ReissuanceBlinding(Indexed)],
             Elements::ReissuanceEntropy => vec![TF::ReissuanceEntropy(Indexed)],
             // ── Issuance aggregate hash jets ──────────────────────────────
-            Elements::IssuanceAssetAmountsHash => issuance_asset_amounts_hash_fields(),
-            Elements::IssuanceTokenAmountsHash => issuance_token_amounts_hash_fields(),
-            Elements::IssuanceBlindingEntropyHash => issuance_blinding_entropy_hash_fields(),
-            Elements::IssuanceRangeProofsHash => issuance_range_proofs_hash_fields(),
+            Elements::IssuanceAssetAmountsHash => issuance_asset_amounts_hash_fields(In::All),
+            Elements::IssuanceTokenAmountsHash => issuance_token_amounts_hash_fields(In::All),
+            Elements::IssuanceBlindingEntropyHash => issuance_blinding_entropy_hash_fields(In::All),
+            Elements::IssuanceRangeProofsHash => issuance_range_proofs_hash_fields(In::All),
             // `issuance_hash`: all issuance data for one indexed input
             Elements::IssuanceHash => issuance_hash_fields(),
             // `issuances_hash`: hash(issuanceAssetAmountsHash ‖ issuanceTokenAmountsHash
@@ -8979,26 +8980,30 @@ impl Jet for Elements {
             // or the taproot environment.
             // TODO: express this precisely once the Elements serialization fields are
             //       fully mapped to TransactionField variants.
-            Elements::TransactionId => vec![
-                F::Version,
-                F::Locktime,
-                F::InputPrevOutpoint(Indexed),
-                F::InputPegin(Indexed),
-                F::InputSequence(Indexed),
-                F::InputScriptSigHash(Indexed),
-                F::IssuanceAssetAmount(Indexed),
-                F::IssuanceTokenAmount(Indexed),
-                F::IssuanceEntropy(Indexed),
-                F::NewIssuanceContract(Indexed),
-                F::ReissuanceBlinding(Indexed),
-                F::ReissuanceEntropy(Indexed),
-                F::OutputAsset(OutputSelector::Indexed),
-                F::OutputAmount(OutputSelector::Indexed),
-                F::OutputNonce(OutputSelector::Indexed),
-                F::OutputScriptHash(OutputSelector::Indexed),
-                F::OutputRangeProof(OutputSelector::Indexed),
-                F::OutputSurjectionProof(OutputSelector::Indexed),
-            ],
+            Elements::TransactionId => {
+                use crate::effects::InputSelector::All as AllIn;
+                use crate::effects::OutputSelector::All as AllOut;
+                vec![
+                    F::Version,
+                    F::Locktime,
+                    F::InputPrevOutpoint(AllIn),
+                    F::InputPegin(AllIn),
+                    F::InputSequence(AllIn),
+                    F::InputScriptSigHash(AllIn),
+                    F::IssuanceAssetAmount(AllIn),
+                    F::IssuanceTokenAmount(AllIn),
+                    F::IssuanceEntropy(AllIn),
+                    F::NewIssuanceContract(AllIn),
+                    F::ReissuanceBlinding(AllIn),
+                    F::ReissuanceEntropy(AllIn),
+                    F::OutputAsset(AllOut),
+                    F::OutputAmount(AllOut),
+                    F::OutputNonce(AllOut),
+                    F::OutputScriptHash(AllOut),
+                    F::OutputRangeProof(AllOut),
+                    F::OutputSurjectionProof(AllOut),
+                ]
+            }
             // ── Pure computation / no environment access ──────────────────
             _ => vec![],
         }
