@@ -359,7 +359,7 @@ fn shorten<S: AsRef<str>>(s: S, max_len: usize) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "human_encoding"))]
 mod tests {
     use crate::human_encoding::Forest;
     use crate::jet::Core;

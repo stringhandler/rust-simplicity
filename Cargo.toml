@@ -16,6 +16,7 @@ default = ["elements"]
 elements = ["dep:elements", "bitcoin"]
 test-utils = ["simplicity-sys/test-utils"]
 serde = ["dep:serde", "bitcoin/serde", "elements/serde"]
+human_encoding = ["dep:logos"]
 
 [lib]
 name = "simplicity"
@@ -29,7 +30,7 @@ elements = { version = "0.25.0", optional = true, default-features = false }
 ghost-cell = { version = "0.2.6", default-features = false }
 hashes = { package = "bitcoin_hashes", version = "0.14" }
 hex = { package = "hex-conservative", version = "0.2.1" }
-logos = "0.15"
+logos = { version = "0.15", optional = true }
 simplicity-sys = { version = "0.6.2", path = "./simplicity-sys" }
 serde = { version = "1.0.103", features = ["derive"], optional = true }
 
