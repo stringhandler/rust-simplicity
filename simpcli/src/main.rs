@@ -12,11 +12,11 @@
 // If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 //
 
-use simplicity::dag::{DagLike, InternalSharing, MaxSharing, NoSharing};
+use simplicity::dag::{DagLike, MaxSharing, NoSharing};
 use simplicity::jet::Jet;
-use simplicity::effects::{annotate_commit, malleability_analysis, missing_write_effects, pruneable_nodes, BranchArm, TransactionField};
+use simplicity::effects::{annotate_commit, enumerate_code_paths, malleability_analysis, pruneable_nodes, BranchArm, TransactionField};
 use simplicity::human_encoding::Forest;
-use simplicity::node::{CommitNode, Inner};
+use simplicity::node::{CommitNode, CommitData, Inner, NoDisconnect, NoWitness, Node};
 use simplicity::{self, BitIter};
 
 use simplicity::base64::engine::general_purpose::STANDARD;
@@ -55,6 +55,7 @@ enum Command {
     Flowchart,
     Graph,
     Mermaid,
+    Optimize,
     Relabel,
     Help,
 }
@@ -69,6 +70,7 @@ impl FromStr for Command {
             "flowchart" => Ok(Command::Flowchart),
             "mermaid" => Ok(Command::Mermaid),
             "graphviz" | "dot" | "graph" => Ok(Command::Graph),
+            "optimize" => Ok(Command::Optimize),
             "relabel" => Ok(Command::Relabel),
             "help" => Ok(Command::Help),
             x => Err(format!("unknown command {}", x)),
@@ -85,6 +87,7 @@ impl Command {
             Command::Flowchart => false,
             Command::Graph => false,
             Command::Mermaid => false,
+            Command::Optimize => false,
             Command::Relabel => false,
             Command::Help => false,
         }
@@ -100,8 +103,15 @@ fn parse_commit(arg: &str) -> Result<std::sync::Arc<CommitNode<DefaultJet>>, Str
             None => Err("expression `main` not found".into()),
         }
     } else {
+        let hex_str = arg.strip_prefix("0x").unwrap_or(arg);
         let v = simplicity::base64::Engine::decode(&STANDARD, arg.as_bytes())
-            .map_err(|e| format!("failed to parse base64: {}", e))?;
+            .or_else(|_| {
+                (0..hex_str.len())
+                    .step_by(2)
+                    .map(|i| u8::from_str_radix(&hex_str[i..i + 2], 16))
+                    .collect::<Result<Vec<u8>, _>>()
+            })
+            .map_err(|e| format!("failed to parse program: {}", e))?;
         let iter = BitIter::from(v.into_iter());
         CommitNode::<DefaultJet>::decode(iter).map_err(|e| format!("failed to decode program: {}", e))
     }
@@ -183,8 +193,15 @@ fn main() -> Result<(), String> {
             }
         }
         Command::Disassemble => {
+            let hex_str = first_arg.strip_prefix("0x").unwrap_or(&first_arg);
             let v = simplicity::base64::Engine::decode(&STANDARD, first_arg.as_bytes())
-                .map_err(|e| format!("failed to parse base64: {}", e))?;
+                .or_else(|_| {
+                    (0..hex_str.len())
+                        .step_by(2)
+                        .map(|i| u8::from_str_radix(&hex_str[i..i + 2], 16))
+                        .collect::<Result<Vec<u8>, _>>()
+                })
+                .map_err(|e| format!("failed to parse program: {}", e))?;
             let iter = BitIter::from(v.into_iter());
             let commit =
                 CommitNode::decode(iter).map_err(|e| format!("failed to decode program: {}", e))?;
@@ -195,7 +212,6 @@ fn main() -> Result<(), String> {
             let commit = parse_commit(&first_arg)?;
             let summaries = annotate_commit(&commit);
             let root_summary = summaries.last().expect("non-empty program");
-            let missing = missing_write_effects(&commit, &summaries);
             let universe = TransactionField::all_elements();
             let malleability = malleability_analysis(&summaries, &universe);
 
@@ -208,22 +224,6 @@ fn main() -> Result<(), String> {
                 println!("  reads:");
                 for field in &root_summary.reads {
                     println!("    {}", field);
-                }
-            }
-
-            // ── Missing write effects ─────────────────────────────────────
-            println!();
-            println!("=== Missing write effects ===");
-            if missing.is_empty() {
-                println!("  (none — every branch has a failure path)");
-            } else {
-                for m in &missing {
-                    let arm = match m.arm {
-                        BranchArm::Left => "left",
-                        BranchArm::Right => "right",
-                    };
-                    let note = if m.is_pure_unit { " (pure unit — completely inert)" } else { "" };
-                    println!("  node #{}: {} arm has no write effect{}", m.node_index, arm, note);
                 }
             }
 
@@ -249,21 +249,79 @@ fn main() -> Result<(), String> {
                     pruneable.iter().map(|p| p.node_index).collect();
                 let mut subsumed: std::collections::HashSet<usize> =
                     std::collections::HashSet::new();
+                let mut bare_units: std::collections::HashSet<usize> =
+                    std::collections::HashSet::new();
                 for item in (&*commit).post_order_iter::<MaxSharing<simplicity::node::Commit<DefaultJet>>>() {
                     if pruneable_set.contains(&item.index) {
                         if let Some(l) = item.left_index { subsumed.insert(l); }
                         if let Some(r) = item.right_index { subsumed.insert(r); }
                     }
+                    if matches!(item.node.inner(), Inner::Unit) {
+                        bare_units.insert(item.index);
+                    }
                 }
                 let top_level: Vec<_> = pruneable.iter()
                     .filter(|p| !subsumed.contains(&p.node_index))
+                    .filter(|p| !bare_units.contains(&p.node_index))
                     .collect();
+                if !top_level.is_empty() {
+                    println!();
+                    println!("=== WARNING: pruneable subtrees ===");
+                    println!("  {} subtree(s) have return type Unit with no side effects", top_level.len());
+                    println!("  and can each be replaced with a bare `unit` node:");
+                    for p in &top_level {
+                        println!("  node #{}", p.node_index);
+                    }
+                }
+            }
+
+            // ── Code path analysis ──────────────────────────────────────
+            let (paths, truncated) = enumerate_code_paths(&commit, 64);
+            let with_write = paths.iter().filter(|p| p.can_fail).count();
+            let without_write = paths.len() - with_write;
+            println!();
+            println!("=== Code path analysis ===");
+            println!("  {} path(s) total{}: {} with write effects, {} without",
+                paths.len(),
+                if truncated { " (truncated)" } else { "" },
+                with_write,
+                without_write,
+            );
+            for (i, path) in paths.iter().enumerate() {
+                let choices: Vec<String> = path.choices.iter()
+                    .map(|(sid, arm)| {
+                        let arm_str = match arm {
+                            BranchArm::Left => "left",
+                            BranchArm::Right => "right",
+                        };
+                        format!("case #{} -> {}", sid, arm_str)
+                    })
+                    .collect();
+                let path_label = if choices.is_empty() {
+                    "(no branches)".to_owned()
+                } else {
+                    choices.join(", ")
+                };
+                let reads = if path.reads.is_empty() {
+                    "no reads".to_owned()
+                } else {
+                    format!("reads {} fields", path.reads.len())
+                };
+                let fail = if path.can_fail { "can fail" } else { "cannot fail" };
+                let warning = if !path.can_fail { " << NO WRITE EFFECT" } else { "" };
+                let path_uncovered: Vec<_> = universe.difference(&path.reads).collect();
                 println!();
-                println!("=== WARNING: pruneable subtrees ===");
-                println!("  {} subtree(s) have return type Unit with no side effects", top_level.len());
-                println!("  and can each be replaced with a bare `unit` node:");
-                for p in &top_level {
-                    println!("  node #{}", p.node_index);
+                println!("  Path {}: {}", i + 1, path_label);
+                println!("    {}, {}{}", reads, fail, warning);
+                if path_uncovered.len() < universe.len() && !path_uncovered.is_empty() {
+                    println!("    uncovered fields ({}):", path_uncovered.len());
+                    for field in &path_uncovered {
+                        println!("      {}", field);
+                    }
+                } else if path_uncovered.is_empty() {
+                    println!("    all fields covered");
+                } else {
+                    println!("    no fields covered (reads nothing)");
                 }
             }
         }
@@ -275,8 +333,11 @@ fn main() -> Result<(), String> {
             // different (higher) indices to revisited nodes.
             let summaries_vec = annotate_commit(&commit);
             let mut summaries: HashMap<usize, simplicity::effects::EffectSummary> = HashMap::new();
+            let mut sharing_index: HashMap<usize, usize> = HashMap::new();
             for item in (&*commit).post_order_iter::<MaxSharing<simplicity::node::Commit<DefaultJet>>>() {
-                summaries.insert(item.node as *const _ as usize, summaries_vec[item.index].clone());
+                let ptr = item.node as *const _ as usize;
+                summaries.insert(ptr, summaries_vec[item.index].clone());
+                sharing_index.insert(ptr, item.index);
             }
 
             // Build an effect suffix string for a node label (HTML newlines for Mermaid).
@@ -294,10 +355,13 @@ fn main() -> Result<(), String> {
             struct FlowInfo {
                 start: String,
                 end: String,
+                /// All Mermaid node IDs in this subtree (for subgraph containment).
+                members: Vec<String>,
             }
             let mut flow: Vec<FlowInfo> = Vec::new();
             let mut node_defs: Vec<String> = Vec::new();
             let mut edges: Vec<String> = Vec::new();
+            let mut subgraphs: Vec<String> = Vec::new();
             // Red node IDs collected separately so they override the green jet style.
             let mut red_nodes: Vec<String> = Vec::new();
 
@@ -305,51 +369,76 @@ fn main() -> Result<(), String> {
                 let i = item.index;
                 let nid = format!("N{}", i);
                 let ptr = item.node as *const _ as usize;
+                let sid = sharing_index.get(&ptr).copied().unwrap_or(i);
                 let can_fail = summaries.get(&ptr).map_or(false, |s| s.can_fail);
 
                 match item.node.inner() {
-                    // comp: sequential — s feeds into t
+                    // comp: sequential — s feeds into t, wrapped in a subgraph box
                     Inner::Comp(_, _) => {
-                        let s = &flow[item.left_index.unwrap()];
-                        let t = &flow[item.right_index.unwrap()];
-                        edges.push(format!("  {} --> {}", s.end, t.start));
-                        flow.push(FlowInfo { start: s.start.clone(), end: t.end.clone() });
+                        let li = item.left_index.unwrap();
+                        let ri = item.right_index.unwrap();
+                        let suffix = effect_suffix(ptr);
+                        edges.push(format!("  {} --> {}", flow[li].end, flow[ri].start));
+                        let sg_id = format!("SG{}", i);
+                        subgraphs.push(format!("  subgraph {}[\"[{}] comp{}\"]", sg_id, sid, suffix));
+                        // Collect all member node IDs from both children.
+                        let mut members: Vec<String> = Vec::new();
+                        members.extend(flow[li].members.iter().cloned());
+                        members.extend(flow[ri].members.iter().cloned());
+                        for m in &members {
+                            subgraphs.push(format!("    {}", m));
+                        }
+                        subgraphs.push("  end".to_owned());
+                        if can_fail {
+                            subgraphs.push(format!("  style {} stroke:#cc0000,stroke-width:2px", sg_id));
+                        }
+                        let start = flow[li].start.clone();
+                        let end = flow[ri].end.clone();
+                        members.push(sg_id);
+                        flow.push(FlowInfo { start, end, members });
                     }
 
                     // pair: parallel — split into s and t, then join
                     Inner::Pair(_, _) | Inner::Disconnect(_, _) => {
-                        let s = &flow[item.left_index.unwrap()];
-                        let t = &flow[item.right_index.unwrap()];
+                        let li = item.left_index.unwrap();
+                        let ri = item.right_index.unwrap();
                         let split_id = format!("SP{}", i);
                         let join_id = format!("J{}", i);
                         let out_type = item.node.cached_data().arrow().target.to_string().replace('×', "*");
                         let suffix = effect_suffix(ptr);
-                        node_defs.push(format!("  {}(\"[{}] pair\")", split_id, i));
-                        node_defs.push(format!("  {}(\"[{}] -&gt; {}{}\")", join_id, i, out_type, suffix));
-                        edges.push(format!("  {} --> {}", split_id, s.start));
-                        edges.push(format!("  {} --> {}", split_id, t.start));
-                        edges.push(format!("  {} --> {}", s.end, join_id));
-                        edges.push(format!("  {} --> {}", t.end, join_id));
+                        node_defs.push(format!("  {}(\"[{}] pair\")", split_id, sid));
+                        node_defs.push(format!("  {}(\"[{}] -&gt; {}{}\")", join_id, sid, out_type, suffix));
+                        edges.push(format!("  {} --> {}", split_id, flow[li].start));
+                        edges.push(format!("  {} --> {}", split_id, flow[ri].start));
+                        edges.push(format!("  {} --> {}", flow[li].end, join_id));
+                        edges.push(format!("  {} --> {}", flow[ri].end, join_id));
                         if can_fail { red_nodes.push(join_id.clone()); }
-                        flow.push(FlowInfo { start: split_id, end: join_id });
+                        let mut members = vec![split_id.clone(), join_id.clone()];
+                        members.extend(flow[li].members.iter().cloned());
+                        members.extend(flow[ri].members.iter().cloned());
+                        flow.push(FlowInfo { start: split_id, end: join_id, members });
                     }
 
                     // case: conditional branch — decision routes to s or t, then join
                     Inner::Case(_, _) => {
-                        let s = &flow[item.left_index.unwrap()];
-                        let t = &flow[item.right_index.unwrap()];
+                        let li = item.left_index.unwrap();
+                        let ri = item.right_index.unwrap();
                         let dec_id = format!("D{}", i);
                         let join_id = format!("J{}", i);
                         let out_type = item.node.cached_data().arrow().target.to_string().replace('×', "*");
                         let suffix = effect_suffix(ptr);
-                        node_defs.push(format!("  {}{{\"[{}] case\"}}", dec_id, i));
-                        node_defs.push(format!("  {}(\"[{}] -&gt; {}{}\")", join_id, i, out_type, suffix));
-                        edges.push(format!("  {} -->|left| {}", dec_id, s.start));
-                        edges.push(format!("  {} -->|right| {}", dec_id, t.start));
-                        edges.push(format!("  {} --> {}", s.end, join_id));
-                        edges.push(format!("  {} --> {}", t.end, join_id));
+                        node_defs.push(format!("  {}{{\"[{}] case\"}}", dec_id, sid));
+                        node_defs.push(format!("  {}(\"[{}] -&gt; {}{}\")", join_id, sid, out_type, suffix));
+                        // Emit right edge before left so Mermaid places left on the left side.
+                        edges.push(format!("  {} -->|right| {}", dec_id, flow[ri].start));
+                        edges.push(format!("  {} -->|left| {}", dec_id, flow[li].start));
+                        edges.push(format!("  {} --> {}", flow[li].end, join_id));
+                        edges.push(format!("  {} --> {}", flow[ri].end, join_id));
                         if can_fail { red_nodes.push(join_id.clone()); }
-                        flow.push(FlowInfo { start: dec_id, end: join_id });
+                        let mut members = vec![dec_id.clone(), join_id.clone()];
+                        members.extend(flow[li].members.iter().cloned());
+                        members.extend(flow[ri].members.iter().cloned());
+                        flow.push(FlowInfo { start: dec_id, end: join_id, members });
                     }
 
                     // Unary wrappers: child flows through, then this node
@@ -365,11 +454,13 @@ fn main() -> Result<(), String> {
                             _ => unreachable!(),
                         };
                         let suffix = effect_suffix(ptr);
-                        let child = &flow[item.left_index.unwrap()];
-                        node_defs.push(format!("  {}[\"[{}] {}{}\"]", nid, i, base_label, suffix));
+                        let ci = item.left_index.unwrap();
+                        node_defs.push(format!("  {}[\"[{}] {}{}\"]", nid, sid, base_label, suffix));
                         if can_fail { red_nodes.push(nid.clone()); }
-                        edges.push(format!("  {} --> {}", child.end, nid));
-                        flow.push(FlowInfo { start: child.start.clone(), end: nid });
+                        edges.push(format!("  {} --> {}", flow[ci].end, nid));
+                        let mut members = vec![nid.clone()];
+                        members.extend(flow[ci].members.iter().cloned());
+                        flow.push(FlowInfo { start: flow[ci].start.clone(), end: nid, members });
                     }
 
                     // Leaves: single box
@@ -385,12 +476,12 @@ fn main() -> Result<(), String> {
                             _ => "?".to_owned(),
                         };
                         let suffix = effect_suffix(ptr);
-                        node_defs.push(format!("  {}[\"[{}] {}{}\"]", nid, i, base_label, suffix));
+                        node_defs.push(format!("  {}[\"[{}] {}{}\"]", nid, sid, base_label, suffix));
                         if is_jet {
                             node_defs.push(format!("  style {} fill:#2a7,color:#fff,stroke:#195", nid));
                         }
                         if can_fail { red_nodes.push(nid.clone()); }
-                        flow.push(FlowInfo { start: nid.clone(), end: nid });
+                        flow.push(FlowInfo { start: nid.clone(), end: nid.clone(), members: vec![nid] });
                     }
                 }
             }
@@ -407,6 +498,9 @@ fn main() -> Result<(), String> {
             println!("  {} --> END", root_end);
             for def in &node_defs {
                 println!("{}", def);
+            }
+            for sg in &subgraphs {
+                println!("{}", sg);
             }
             for edge in &edges {
                 println!("{}", edge);
@@ -497,6 +591,95 @@ fn main() -> Result<(), String> {
             let commit = CommitNode::<DefaultJet>::decode(iter)
                 .map_err(|e| format!("failed to decode program: {}", e))?;
             println!("{}", commit.display_as_dot());
+        }
+        Command::Optimize => {
+            let commit = parse_commit(&first_arg)?;
+            let summaries = annotate_commit(&commit);
+
+            // Find top-level pruneable nodes (same logic as effects command).
+            let pruneable = pruneable_nodes(&summaries);
+            let pruneable_set: std::collections::HashSet<usize> =
+                pruneable.iter().map(|p| p.node_index).collect();
+            let mut subsumed: std::collections::HashSet<usize> =
+                std::collections::HashSet::new();
+            let mut bare_units: std::collections::HashSet<usize> =
+                std::collections::HashSet::new();
+            for item in (&*commit).post_order_iter::<MaxSharing<simplicity::node::Commit<DefaultJet>>>() {
+                if pruneable_set.contains(&item.index) {
+                    if let Some(l) = item.left_index { subsumed.insert(l); }
+                    if let Some(r) = item.right_index { subsumed.insert(r); }
+                }
+                if matches!(item.node.inner(), Inner::Unit) {
+                    bare_units.insert(item.index);
+                }
+            }
+            let replace_set: std::collections::HashSet<usize> = pruneable.iter()
+                .map(|p| p.node_index)
+                .filter(|idx| !subsumed.contains(idx))
+                .filter(|idx| !bare_units.contains(idx))
+                .collect();
+
+            if replace_set.is_empty() {
+                eprintln!("Nothing to optimize.");
+                println!("{}", commit);
+            } else {
+                eprintln!("Replacing {} pruneable subtree(s) with unit.", replace_set.len());
+
+                // Rebuild the DAG, replacing pruneable subtrees with unit nodes.
+                let mut rebuilt: Vec<std::sync::Arc<CommitNode<DefaultJet>>> = Vec::new();
+                for item in (&*commit).post_order_iter::<MaxSharing<simplicity::node::Commit<DefaultJet>>>() {
+                    if replace_set.contains(&item.index) {
+                        // Replace with a unit node that keeps the same type arrow.
+                        let arrow = item.node.cached_data().arrow().shallow_clone();
+                        let data = CommitData::from_final(arrow, Inner::Unit.as_ref());
+                        rebuilt.push(std::sync::Arc::new(Node::from_parts(Inner::Unit, std::sync::Arc::new(data))));
+                    } else {
+                        // Rebuild node with (potentially replaced) children.
+                        let new_inner = match item.node.inner() {
+                            Inner::Iden => Inner::Iden,
+                            Inner::Unit => Inner::Unit,
+                            Inner::Fail(e) => Inner::Fail(*e),
+                            Inner::Jet(j) => Inner::Jet(j.clone()),
+                            Inner::Word(w) => Inner::Word(w.shallow_clone()),
+                            Inner::Witness(_) => Inner::Witness(NoWitness),
+                            Inner::Disconnect(_, _) => Inner::Disconnect(
+                                std::sync::Arc::clone(&rebuilt[item.left_index.unwrap()]),
+                                NoDisconnect,
+                            ),
+                            Inner::InjL(_) => Inner::InjL(std::sync::Arc::clone(&rebuilt[item.left_index.unwrap()])),
+                            Inner::InjR(_) => Inner::InjR(std::sync::Arc::clone(&rebuilt[item.left_index.unwrap()])),
+                            Inner::Take(_) => Inner::Take(std::sync::Arc::clone(&rebuilt[item.left_index.unwrap()])),
+                            Inner::Drop(_) => Inner::Drop(std::sync::Arc::clone(&rebuilt[item.left_index.unwrap()])),
+                            Inner::AssertL(_, cmr) => Inner::AssertL(
+                                std::sync::Arc::clone(&rebuilt[item.left_index.unwrap()]),
+                                *cmr,
+                            ),
+                            Inner::AssertR(cmr, _) => Inner::AssertR(
+                                *cmr,
+                                std::sync::Arc::clone(&rebuilt[item.right_index.unwrap()]),
+                            ),
+                            Inner::Comp(_, _) => Inner::Comp(
+                                std::sync::Arc::clone(&rebuilt[item.left_index.unwrap()]),
+                                std::sync::Arc::clone(&rebuilt[item.right_index.unwrap()]),
+                            ),
+                            Inner::Case(_, _) => Inner::Case(
+                                std::sync::Arc::clone(&rebuilt[item.left_index.unwrap()]),
+                                std::sync::Arc::clone(&rebuilt[item.right_index.unwrap()]),
+                            ),
+                            Inner::Pair(_, _) => Inner::Pair(
+                                std::sync::Arc::clone(&rebuilt[item.left_index.unwrap()]),
+                                std::sync::Arc::clone(&rebuilt[item.right_index.unwrap()]),
+                            ),
+                        };
+                        let arrow = item.node.cached_data().arrow().shallow_clone();
+                        let data_inner = new_inner.as_ref().map(|n| n.cached_data()).map_disconnect(|_| &NoDisconnect).map_witness(|_| &NoWitness);
+                        let data = CommitData::from_final(arrow, data_inner);
+                        rebuilt.push(std::sync::Arc::new(Node::from_parts(new_inner, std::sync::Arc::new(data))));
+                    }
+                }
+                let optimized = rebuilt.pop().unwrap();
+                println!("{}", optimized);
+            }
         }
         Command::Relabel => {
             let prog = parse_file(&first_arg)?;

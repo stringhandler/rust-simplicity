@@ -1,7 +1,6 @@
 /* This file has been automatically generated. */
 
 use crate::analysis::Cost;
-use crate::decode_bits;
 use crate::jet::elements::ElementsEnv;
 use crate::jet::type_name::TypeName;
 use crate::jet::Jet;
@@ -1099,29 +1098,29 @@ fn issuances_hash_fields() -> Vec<F> {
 // ── Output sub-hashes (env.c: per-output loop) ────────────────────────────────
 
 /// `outputAssetAmountsHash`: output.asset, output.amt
-fn output_asset_amounts_hash_fields() -> Vec<F> {
-    vec![F::OutputAsset(Out::All), F::OutputAmount(Out::All)]
+fn output_asset_amounts_hash_fields(selector: Out) -> Vec<F> {
+    vec![F::OutputAsset(selector.clone()), F::OutputAmount(selector)]
 }
 
 /// `outputNoncesHash`: output.nonce
-fn output_nonces_hash_fields() -> Vec<F> {
-    vec![F::OutputNonce(Out::All)]
+fn output_nonces_hash_fields(selector: Out) -> Vec<F> {
+    vec![F::OutputNonce(selector)]
 }
 
 /// `outputScriptsHash`: output.scriptPubKey
-fn output_scripts_hash_fields() -> Vec<F> {
-    vec![F::OutputScriptHash(Out::All)]
+fn output_scripts_hash_fields(selector: Out) -> Vec<F> {
+    vec![F::OutputScriptHash(selector)]
 }
 
 /// `outputRangeProofsHash`: output.rangeProofHash
-fn output_range_proofs_hash_fields() -> Vec<F> {
-    vec![F::OutputRangeProof(Out::All)]
+fn output_range_proofs_hash_fields(selector: Out) -> Vec<F> {
+    vec![F::OutputRangeProof(selector)]
 }
 
 /// `outputSurjectionProofsHash`: output.surjectionProofHash
 /// NOTE: this is a *separate* term in `txHash`, not part of `outputsHash`.
-fn output_surjection_proofs_hash_fields() -> Vec<F> {
-    vec![F::OutputSurjectionProof(Out::All)]
+fn output_surjection_proofs_hash_fields(selector: Out) -> Vec<F> {
+    vec![F::OutputSurjectionProof(selector)]
 }
 
 /// `output_hash` jet: asset, amt, nonce, scriptPubKey, rangeProofHash
@@ -1129,12 +1128,15 @@ fn output_surjection_proofs_hash_fields() -> Vec<F> {
 /// NOTE: surjectionProofHash, isFee, and nullDatum are NOT in output_hash.
 fn output_hash_fields() -> Vec<F> {
     // NOTE: this is the singular output
-    let mut v = vec![F::OutputAsset(Out::Indexed), F::OutputAmount(Out::Indexed)];
     // v.extend(output_nonces_hash_fields());
     // v.extend(output_scripts_hash_fields());
     // v.extend(output_range_proofs_hash_fields());
     // v
-    todo!("implement single")
+    let mut v = output_asset_amounts_hash_fields(Out::Indexed);
+    v.extend(output_nonces_hash_fields(Out::Indexed));
+    v.extend(output_scripts_hash_fields(Out::Indexed));
+    v.extend(output_range_proofs_hash_fields(Out::Indexed));
+    v
 }
 
 /// `outputs_hash` jet: hash(outputAssetAmountsHash ‖ outputNoncesHash
@@ -1143,10 +1145,10 @@ fn output_hash_fields() -> Vec<F> {
 /// NOTE: outputSurjectionProofsHash is NOT included here; it's a separate term in txHash.
 fn outputs_hash_fields() -> Vec<F> {
     // NOTE: this is the plural
-    let mut v = output_asset_amounts_hash_fields();
-    v.extend(output_nonces_hash_fields());
-    v.extend(output_scripts_hash_fields());
-    v.extend(output_range_proofs_hash_fields());
+    let mut v = output_asset_amounts_hash_fields(Out::All);
+    v.extend(output_nonces_hash_fields(Out::All));
+    v.extend(output_scripts_hash_fields(Out::All));
+    v.extend(output_range_proofs_hash_fields(Out::All));
     v
 }
 
@@ -1168,7 +1170,9 @@ fn tx_hash_fields() -> Vec<F> {
     v.extend(inputs_hash_fields());
     v.extend(outputs_hash_fields());
     v.extend(issuances_hash_fields());
-    v.extend(output_surjection_proofs_hash_fields());
+    v.extend(output_surjection_proofs_hash_fields(
+        crate::effects::OutputSelector::All,
+    ));
     v.extend(input_utxos_hash_fields());
     v
 }
@@ -8909,16 +8913,20 @@ impl Jet for Elements {
             Elements::OutputNullDatum => vec![TF::OutputNullDatum(OutputSelector::Indexed)],
             Elements::OutputRangeProof => vec![TF::OutputRangeProof(OutputSelector::Indexed)],
             Elements::OutputScriptHash => vec![TF::OutputScriptHash(OutputSelector::Indexed)],
-            Elements::OutputSurjectionProof => output_surjection_proofs_hash_fields(),
+            Elements::OutputSurjectionProof => {
+                output_surjection_proofs_hash_fields(OutputSelector::Indexed)
+            }
             // ── Output aggregate hash jets ────────────────────────────────
             // `asset_amount_hash` / `output_amounts_hash`: outputAssetAmountsHash
-            Elements::AssetAmountHash => output_asset_amounts_hash_fields(),
-            Elements::OutputAmountsHash => output_asset_amounts_hash_fields(),
-            Elements::NonceHash => output_nonces_hash_fields(),
-            Elements::OutputNoncesHash => output_nonces_hash_fields(),
-            Elements::OutputRangeProofsHash => output_range_proofs_hash_fields(),
-            Elements::OutputScriptsHash => output_scripts_hash_fields(),
-            Elements::OutputSurjectionProofsHash => output_surjection_proofs_hash_fields(),
+            Elements::AssetAmountHash => vec![],
+            Elements::OutputAmountsHash => output_asset_amounts_hash_fields(OutputSelector::All),
+            Elements::NonceHash => vec![],
+            Elements::OutputNoncesHash => output_nonces_hash_fields(OutputSelector::All),
+            Elements::OutputRangeProofsHash => output_range_proofs_hash_fields(OutputSelector::All),
+            Elements::OutputScriptsHash => output_scripts_hash_fields(OutputSelector::All),
+            Elements::OutputSurjectionProofsHash => {
+                output_surjection_proofs_hash_fields(OutputSelector::All)
+            }
             // `output_hash`: asset, amt, nonce, scriptPubKey, rangeProofHash
             // NOTE: surjectionProof, isFee, nullDatum are NOT in output_hash.
             Elements::OutputHash => output_hash_fields(),

@@ -12,12 +12,13 @@
 //! 1. **Completeness**: flag branches that have no write effect (cannot fail).
 //! 2. **Malleability**: identify transaction fields not committed to by the program.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt;
 use std::sync::Arc;
 
+use crate::dag::{DagLike, MaxSharing};
 use crate::jet::Jet;
-use crate::node::{CommitNode, Marker, Node, RedeemNode};
+use crate::node::{Commit, CommitData, CommitNode, Inner, Marker, Node, RedeemNode};
 use crate::types::arrow::FinalArrow;
 
 /// Selects which input a field refers to.
@@ -351,107 +352,11 @@ pub fn annotate_redeem<J: Jet>(root: &Arc<RedeemNode<J>>) -> Vec<EffectSummary> 
     annotate_effects(root, |data| data.arrow())
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Analysis 1: Missing write effects
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Which arm of a branch node is missing a write effect.
+/// Which arm of a branch node was taken.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BranchArm {
     Left,
     Right,
-}
-
-/// A branch node whose arm has no write effect (cannot fail).
-///
-/// Produced by [`missing_write_effects`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MissingWriteEffect {
-    /// Index of the `Case` or `Assert` node in the post-order summary Vec.
-    pub node_index: usize,
-    /// Which arm is missing a write effect.
-    pub arm: BranchArm,
-    /// Whether the arm is also a pure unit (completely inert).
-    pub is_pure_unit: bool,
-}
-
-/// Find all branch arms that have no write side effect.
-///
-/// A branch with `can_fail == false` can be taken without the script ever
-/// failing, meaning the program enforces no constraint on that path.  This
-/// is almost always a policy error.
-///
-/// Pass the `summaries` Vec returned by [`annotate_effects`] (or the
-/// convenience wrappers) together with the original `root` so that the
-/// node's `Inner` variant can be inspected.
-pub fn missing_write_effects<N>(
-    root: &Arc<Node<N>>,
-    summaries: &[EffectSummary],
-) -> Vec<MissingWriteEffect>
-where
-    N: Marker,
-    N::Jet: Jet,
-{
-    use crate::dag::{DagLike, MaxSharing};
-    use crate::node::Inner;
-
-    let mut results = Vec::new();
-
-    for item in (&**root).post_order_iter::<MaxSharing<N>>() {
-        let node: &Node<N> = item.node;
-        let idx = item.index;
-
-        match node.inner() {
-            Inner::Case(_, _) => {
-                let left_idx = item.left_index.expect("Case must have left child");
-                let right_idx = item.right_index.expect("Case must have right child");
-                let left_s = &summaries[left_idx];
-                let right_s = &summaries[right_idx];
-
-                if !left_s.can_fail {
-                    results.push(MissingWriteEffect {
-                        node_index: idx,
-                        arm: BranchArm::Left,
-                        is_pure_unit: left_s.is_pure_unit,
-                    });
-                }
-                if !right_s.can_fail {
-                    results.push(MissingWriteEffect {
-                        node_index: idx,
-                        arm: BranchArm::Right,
-                        is_pure_unit: right_s.is_pure_unit,
-                    });
-                }
-            }
-            // AssertL keeps left child; right branch is pruned (always fails by construction).
-            Inner::AssertL(_, _) => {
-                let left_idx = item.left_index.expect("AssertL must have left child");
-                let left_s = &summaries[left_idx];
-                if !left_s.can_fail {
-                    results.push(MissingWriteEffect {
-                        node_index: idx,
-                        arm: BranchArm::Left,
-                        is_pure_unit: left_s.is_pure_unit,
-                    });
-                }
-            }
-            // AssertR keeps right child (stored as left in the DAG traversal).
-            Inner::AssertR(_, _) => {
-                let child_idx = item.left_index.expect("AssertR must have child");
-                let child_s = &summaries[child_idx];
-                if !child_s.can_fail {
-                    results.push(MissingWriteEffect {
-                        node_index: idx,
-                        arm: BranchArm::Right,
-                        is_pure_unit: child_s.is_pure_unit,
-                    });
-                }
-            }
-            _ => {}
-        }
-    }
-
-    results
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -532,6 +437,237 @@ pub fn pruneable_nodes(summaries: &[EffectSummary]) -> Vec<PruneableNode> {
         .filter(|(_, s)| s.is_pure_unit)
         .map(|(i, _)| PruneableNode { node_index: i })
         .collect()
+}
+
+/// Optimize a [`CommitNode`] by replacing pure-unit subtrees with bare `unit`
+/// nodes.
+///
+/// A pure-unit subtree is one whose target type is `Unit`, has no failure
+/// effects (`can_fail` is false), and reads no transaction fields. Such
+/// subtrees are observationally inert and can be safely replaced with `unit`.
+///
+/// Returns the optimized program and the number of nodes that were replaced.
+pub fn optimize_pure_unit<J: Jet>(root: &Arc<CommitNode<J>>) -> (Arc<CommitNode<J>>, usize) {
+    let summaries = annotate_commit(root);
+    let all_pruneable: HashSet<usize> = summaries
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.is_pure_unit)
+        .map(|(i, _)| i)
+        .collect();
+
+    if all_pruneable.is_empty() {
+        return (Arc::clone(root), 0);
+    }
+
+    // Compute the set of top-level pruneable nodes: those that are pruneable
+    // but not subsumed by a larger pruneable parent. Also exclude bare `unit`
+    // nodes since replacing those is a no-op.
+    let mut subsumed: HashSet<usize> = HashSet::new();
+    let mut bare_units: HashSet<usize> = HashSet::new();
+    for item in root.as_ref().post_order_iter::<MaxSharing<Commit<J>>>() {
+        if all_pruneable.contains(&item.index) {
+            // Mark children as subsumed.
+            if let Some(l) = item.left_index {
+                subsumed.insert(l);
+            }
+            if let Some(r) = item.right_index {
+                subsumed.insert(r);
+            }
+        }
+        if matches!(item.node.inner(), Inner::Unit) {
+            bare_units.insert(item.index);
+        }
+    }
+    let top_level: HashSet<usize> = all_pruneable
+        .iter()
+        .copied()
+        .filter(|i| !subsumed.contains(i) && !bare_units.contains(i))
+        .collect();
+
+    if top_level.is_empty() {
+        return (Arc::clone(root), 0);
+    }
+
+    let mut replaced = 0usize;
+    let mut rebuilt: Vec<Arc<CommitNode<J>>> = Vec::new();
+
+    for item in root.as_ref().post_order_iter::<MaxSharing<Commit<J>>>() {
+        if top_level.contains(&item.index) {
+            // This subtree is a top-level pure unit — replace with a bare `unit` node.
+            // Preserve the original arrow (source → Unit).
+            let orig_arrow = item.node.cached_data().arrow().clone();
+            let unit_inner: Inner<
+                &Arc<CommitData<J>>,
+                J,
+                &crate::node::NoDisconnect,
+                &crate::node::NoWitness,
+            > = Inner::Unit;
+            let data = CommitData::from_final(orig_arrow, unit_inner);
+            rebuilt.push(Arc::new(Node::from_parts(Inner::Unit, Arc::new(data))));
+            replaced += 1;
+        } else {
+            // Reconstruct the node with (possibly optimized) children.
+            let new_inner = item.node.inner().clone().map_left_right(
+                |_| Arc::clone(&rebuilt[item.left_index.unwrap()]),
+                |_| Arc::clone(&rebuilt[item.right_index.unwrap()]),
+            );
+            // Map children to their cached data for CommitData::from_final.
+            let data_inner = new_inner.as_ref().map(|node| node.cached_data());
+            let new_data =
+                CommitData::from_final(item.node.cached_data().arrow().clone(), data_inner);
+            rebuilt.push(Arc::new(Node::from_parts(new_inner, Arc::new(new_data))));
+        }
+    }
+
+    (rebuilt.pop().unwrap(), replaced)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Analysis 4: Per-code-path enumeration
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A single executable code path through the program, determined by branch
+/// choices at `case` nodes.
+#[derive(Debug, Clone)]
+pub struct CodePath {
+    /// Case-node choices that define this path.
+    /// Each entry is (MaxSharing post-order index, which arm was taken).
+    pub choices: Vec<(usize, BranchArm)>,
+    /// Transaction fields read along this path.
+    pub reads: BTreeSet<TransactionField>,
+    /// Whether this path can fail (has a write/failure effect).
+    pub can_fail: bool,
+}
+
+/// Enumerate all possible execution paths through a [`CommitNode`] program.
+///
+/// At each `case` node the analysis forks into two paths (left arm, right arm).
+/// For sequential combinators (`comp`, `pair`) the child paths are combined via
+/// cross-product.  Returns one [`CodePath`] per distinct execution path.
+///
+/// If the number of paths exceeds `max_paths`, enumeration stops early and the
+/// second return value is `true`.
+pub fn enumerate_code_paths<J: Jet>(
+    root: &Arc<CommitNode<J>>,
+    max_paths: usize,
+) -> (Vec<CodePath>, bool) {
+    use crate::dag::{DagLike, MaxSharing};
+    use crate::node::{Commit, Inner};
+    use std::collections::HashMap;
+
+    // Build pointer → MaxSharing post-order index map.
+    let mut sids: HashMap<usize, usize> = HashMap::new();
+    for item in root.as_ref().post_order_iter::<MaxSharing<Commit<J>>>() {
+        sids.insert(item.node as *const _ as usize, item.index);
+    }
+
+    fn walk<J: Jet>(
+        node: &CommitNode<J>,
+        sids: &HashMap<usize, usize>,
+        max: usize,
+    ) -> (Vec<CodePath>, bool) {
+        let ptr = node as *const _ as usize;
+        let sid = sids.get(&ptr).copied().unwrap_or(0);
+
+        match node.inner() {
+            // Leaves
+            Inner::Unit | Inner::Iden | Inner::Witness(_) | Inner::Word(_) => (
+                vec![CodePath {
+                    choices: vec![],
+                    reads: BTreeSet::new(),
+                    can_fail: false,
+                }],
+                false,
+            ),
+            Inner::Fail(_) => (
+                vec![CodePath {
+                    choices: vec![],
+                    reads: BTreeSet::new(),
+                    can_fail: true,
+                }],
+                false,
+            ),
+            Inner::Jet(j) => {
+                let reads = j.read_effects().into_iter().collect();
+                let can_fail = j.has_write_effect();
+                (
+                    vec![CodePath {
+                        choices: vec![],
+                        reads,
+                        can_fail,
+                    }],
+                    false,
+                )
+            }
+
+            // Unary: inherit child paths
+            Inner::InjL(c) | Inner::InjR(c) | Inner::Take(c) | Inner::Drop(c) => walk(c, sids, max),
+            Inner::AssertL(c, _) => {
+                let (mut paths, tr) = walk(c, sids, max);
+                for p in &mut paths {
+                    p.can_fail = true;
+                }
+                (paths, tr)
+            }
+            Inner::AssertR(_, c) => {
+                let (mut paths, tr) = walk(c, sids, max);
+                for p in &mut paths {
+                    p.can_fail = true;
+                }
+                (paths, tr)
+            }
+
+            // Case: fork into left and right paths
+            Inner::Case(l, r) => {
+                let (mut lp, lt) = walk(l, sids, max);
+                let (mut rp, rt) = walk(r, sids, max);
+                for p in &mut lp {
+                    p.choices.insert(0, (sid, BranchArm::Left));
+                }
+                for p in &mut rp {
+                    p.choices.insert(0, (sid, BranchArm::Right));
+                }
+                lp.extend(rp);
+                let truncated = lt || rt || lp.len() > max;
+                if lp.len() > max {
+                    lp.truncate(max);
+                }
+                (lp, truncated)
+            }
+
+            // Binary sequential: cross-product of child paths
+            Inner::Comp(l, r) | Inner::Pair(l, r) => {
+                let (lp, lt) = walk(l, sids, max);
+                let (rp, rt) = walk(r, sids, max);
+                let mut result = Vec::new();
+                let mut truncated = lt || rt;
+                'outer: for left in &lp {
+                    for right in &rp {
+                        if result.len() >= max {
+                            truncated = true;
+                            break 'outer;
+                        }
+                        let mut choices = left.choices.clone();
+                        choices.extend(right.choices.iter().cloned());
+                        let reads = left.reads.union(&right.reads).cloned().collect();
+                        let can_fail = left.can_fail || right.can_fail;
+                        result.push(CodePath {
+                            choices,
+                            reads,
+                            can_fail,
+                        });
+                    }
+                }
+                (result, truncated)
+            }
+
+            // Disconnect: only left child exists at commit time
+            Inner::Disconnect(l, _) => walk(l, sids, max),
+        }
+    }
+
+    walk(root, &sids, max_paths)
 }
 
 impl fmt::Display for InputSelector {
@@ -639,48 +775,33 @@ impl fmt::Display for TransactionField {
 }
 
 impl TransactionField {
-    /// All Bitcoin transaction fields (no Elements extensions).
     pub fn all_bitcoin() -> BTreeSet<TransactionField> {
-        todo!("untested");
-        use InputSelector::{All as AllIn, Current, Indexed};
-        use OutputSelector::{All as AllOut, Indexed as IndexedOut};
-        [
-            TransactionField::Version,
-            TransactionField::Locktime,
-            TransactionField::InputCount,
-            TransactionField::OutputCount,
-            TransactionField::InputPrevOutpoint(Current),
-            TransactionField::InputPrevOutpoint(Indexed),
-            TransactionField::InputPrevOutpoint(AllIn),
-            TransactionField::InputSequence(Current),
-            TransactionField::InputSequence(Indexed),
-            TransactionField::InputSequence(AllIn),
-            TransactionField::InputValue(Current),
-            TransactionField::InputValue(Indexed),
-            TransactionField::InputValue(AllIn),
-            TransactionField::InputScriptSigHash(Current),
-            TransactionField::InputScriptSigHash(Indexed),
-            TransactionField::InputScriptSigHash(AllIn),
-            TransactionField::InputAnnexHash(Current),
-            TransactionField::InputAnnexHash(Indexed),
-            TransactionField::InputAnnexHash(AllIn),
-            TransactionField::CurrentInputIndex,
-            TransactionField::OutputValue(IndexedOut),
-            TransactionField::OutputValue(AllOut),
-            TransactionField::OutputScriptHash(IndexedOut),
-            TransactionField::OutputScriptHash(AllOut),
-            TransactionField::TotalInputValue,
-            TransactionField::TotalOutputValue,
-            TransactionField::TapleafVersion,
-            TransactionField::InternalKey,
-            TransactionField::Tappath,
-            TransactionField::ScriptCmr,
-        ]
-        .into_iter()
-        .collect()
+        todo!("Not supported at this time.")
+        // These should be verified before use.
+        //  use InputSelector::All as AllIn;
+        // use OutputSelector::All as AllOut;
+        // let mut fields = vec![];
+        // fields.extend([
+        //     TransactionField::Version,
+        //     TransactionField::Locktime,
+        //     TransactionField::InputPrevOutpoint(AllIn),
+        //     TransactionField::InputSequence(AllIn),
+        //     TransactionField::InputAnnexHash(AllIn),
+        //     TransactionField::OutputAmount(AllOut),
+        //     TransactionField::OutputNonce(AllOut),
+        //     TransactionField::OutputScriptHash(AllOut),
+        //     TransactionField::InputAmount(AllIn),
+        //     TransactionField::InputScriptHash(AllIn),
+        //     // Tap env hash
+        //     TransactionField::TapleafVersion,
+        //     TransactionField::ScriptCmr,
+        //     TransactionField::Tappath,
+        //     TransactionField::InternalKey,
+        //     TransactionField::CurrentInputIndex,
+        // ]);
+        // fields.into_iter().collect()
     }
 
-    /// All Elements transaction fields (superset of Bitcoin).
     #[cfg(feature = "elements")]
     pub fn all_elements() -> BTreeSet<TransactionField> {
         use InputSelector::All as AllIn;

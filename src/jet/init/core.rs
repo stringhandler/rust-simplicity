@@ -1,11 +1,10 @@
 /* This file has been automatically generated. */
 
+use crate::analysis::Cost;
 use crate::jet::type_name::TypeName;
 use crate::jet::Jet;
 use crate::merkle::cmr::Cmr;
-use crate::decode_bits;
 use crate::{decode, BitIter, BitWriter};
-use crate::analysis::Cost;
 use hashes::sha256::Midstate;
 use simplicity_sys::CFrameItem;
 use std::io::Write;
@@ -759,7 +758,6 @@ impl Core {
 }
 
 impl Jet for Core {
-
     type Environment = ();
     type CJetEnvironment = ();
 
@@ -3255,7 +3253,9 @@ impl Jet for Core {
             Core::Or64 => b"l",
             Core::Or8 => b"***22*22**22*22",
             Core::ParseLock => b"+ii",
-            Core::ParseSequence => b"+1+****22*22**22*22***22*22**22*22****22*22**22*22***22*22**22*22",
+            Core::ParseSequence => {
+                b"+1+****22*22**22*22***22*22**22*22****22*22**22*22***22*22**22*22"
+            }
             Core::PointVerify1 => b"1",
             Core::RightExtend16_32 => b"i",
             Core::RightExtend16_64 => b"l",
@@ -3323,19 +3323,43 @@ impl Jet for Core {
             Core::ScalarSquare => b"h",
             Core::Scale => b"**hhh",
             Core::Sha256Block => b"h",
-            Core::Sha256Ctx8Add1 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Core::Sha256Ctx8Add128 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Core::Sha256Ctx8Add16 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Core::Sha256Ctx8Add2 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Core::Sha256Ctx8Add256 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Core::Sha256Ctx8Add32 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Core::Sha256Ctx8Add4 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Core::Sha256Ctx8Add512 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Core::Sha256Ctx8Add64 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Core::Sha256Ctx8Add8 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
-            Core::Sha256Ctx8AddBuffer511 => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
+            Core::Sha256Ctx8Add1 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Core::Sha256Ctx8Add128 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Core::Sha256Ctx8Add16 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Core::Sha256Ctx8Add2 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Core::Sha256Ctx8Add256 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Core::Sha256Ctx8Add32 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Core::Sha256Ctx8Add4 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Core::Sha256Ctx8Add512 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Core::Sha256Ctx8Add64 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Core::Sha256Ctx8Add8 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
+            Core::Sha256Ctx8AddBuffer511 => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
             Core::Sha256Ctx8Finalize => b"h",
-            Core::Sha256Ctx8Init => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
+            Core::Sha256Ctx8Init => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
             Core::Sha256Iv => b"h",
             Core::Some1 => b"2",
             Core::Some16 => b"2",
@@ -3347,7 +3371,9 @@ impl Jet for Core {
             Core::Subtract64 => b"*2l",
             Core::Subtract8 => b"*2***22*22**22*22",
             Core::Swu => b"*hh",
-            Core::TapdataInit => b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh",
+            Core::TapdataInit => {
+                b"**+1h*+1*ll*+1l*+1i*+1****22*22**22*22***22*22**22*22+1***22*22**22*22*lh"
+            }
             Core::Verify => b"1",
             Core::Xor1 => b"2",
             Core::Xor16 => b"****22*22**22*22***22*22**22*22",
@@ -6098,14 +6124,20 @@ impl Jet for Core {
             Core::FullLeftShift16_4 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_16_4,
             Core::FullLeftShift16_8 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_16_8,
             Core::FullLeftShift32_1 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_1,
-            Core::FullLeftShift32_16 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_16,
+            Core::FullLeftShift32_16 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_16
+            }
             Core::FullLeftShift32_2 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_2,
             Core::FullLeftShift32_4 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_4,
             Core::FullLeftShift32_8 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_32_8,
             Core::FullLeftShift64_1 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_1,
-            Core::FullLeftShift64_16 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_16,
+            Core::FullLeftShift64_16 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_16
+            }
             Core::FullLeftShift64_2 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_2,
-            Core::FullLeftShift64_32 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_32,
+            Core::FullLeftShift64_32 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_32
+            }
             Core::FullLeftShift64_4 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_4,
             Core::FullLeftShift64_8 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_64_8,
             Core::FullLeftShift8_1 => &simplicity_sys::c_jets::jets_wrapper::full_left_shift_8_1,
@@ -6115,21 +6147,51 @@ impl Jet for Core {
             Core::FullMultiply32 => &simplicity_sys::c_jets::jets_wrapper::full_multiply_32,
             Core::FullMultiply64 => &simplicity_sys::c_jets::jets_wrapper::full_multiply_64,
             Core::FullMultiply8 => &simplicity_sys::c_jets::jets_wrapper::full_multiply_8,
-            Core::FullRightShift16_1 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_1,
-            Core::FullRightShift16_2 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_2,
-            Core::FullRightShift16_4 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_4,
-            Core::FullRightShift16_8 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_8,
-            Core::FullRightShift32_1 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_1,
-            Core::FullRightShift32_16 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_16,
-            Core::FullRightShift32_2 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_2,
-            Core::FullRightShift32_4 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_4,
-            Core::FullRightShift32_8 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_8,
-            Core::FullRightShift64_1 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_1,
-            Core::FullRightShift64_16 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_16,
-            Core::FullRightShift64_2 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_2,
-            Core::FullRightShift64_32 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_32,
-            Core::FullRightShift64_4 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_4,
-            Core::FullRightShift64_8 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_8,
+            Core::FullRightShift16_1 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_1
+            }
+            Core::FullRightShift16_2 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_2
+            }
+            Core::FullRightShift16_4 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_4
+            }
+            Core::FullRightShift16_8 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_16_8
+            }
+            Core::FullRightShift32_1 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_1
+            }
+            Core::FullRightShift32_16 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_16
+            }
+            Core::FullRightShift32_2 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_2
+            }
+            Core::FullRightShift32_4 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_4
+            }
+            Core::FullRightShift32_8 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_32_8
+            }
+            Core::FullRightShift64_1 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_1
+            }
+            Core::FullRightShift64_16 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_16
+            }
+            Core::FullRightShift64_2 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_2
+            }
+            Core::FullRightShift64_32 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_32
+            }
+            Core::FullRightShift64_4 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_4
+            }
+            Core::FullRightShift64_8 => {
+                &simplicity_sys::c_jets::jets_wrapper::full_right_shift_64_8
+            }
             Core::FullRightShift8_1 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_8_1,
             Core::FullRightShift8_2 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_8_2,
             Core::FullRightShift8_4 => &simplicity_sys::c_jets::jets_wrapper::full_right_shift_8_4,
@@ -6348,7 +6410,9 @@ impl Jet for Core {
             Core::ScalarInvert => &simplicity_sys::c_jets::jets_wrapper::scalar_invert,
             Core::ScalarIsZero => &simplicity_sys::c_jets::jets_wrapper::scalar_is_zero,
             Core::ScalarMultiply => &simplicity_sys::c_jets::jets_wrapper::scalar_multiply,
-            Core::ScalarMultiplyLambda => &simplicity_sys::c_jets::jets_wrapper::scalar_multiply_lambda,
+            Core::ScalarMultiplyLambda => {
+                &simplicity_sys::c_jets::jets_wrapper::scalar_multiply_lambda
+            }
             Core::ScalarNegate => &simplicity_sys::c_jets::jets_wrapper::scalar_negate,
             Core::ScalarNormalize => &simplicity_sys::c_jets::jets_wrapper::scalar_normalize,
             Core::ScalarSquare => &simplicity_sys::c_jets::jets_wrapper::scalar_square,
@@ -6364,8 +6428,12 @@ impl Jet for Core {
             Core::Sha256Ctx8Add512 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_512,
             Core::Sha256Ctx8Add64 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_64,
             Core::Sha256Ctx8Add8 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_8,
-            Core::Sha256Ctx8AddBuffer511 => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_buffer_511,
-            Core::Sha256Ctx8Finalize => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_finalize,
+            Core::Sha256Ctx8AddBuffer511 => {
+                &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_add_buffer_511
+            }
+            Core::Sha256Ctx8Finalize => {
+                &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_finalize
+            }
             Core::Sha256Ctx8Init => &simplicity_sys::c_jets::jets_wrapper::sha_256_ctx_8_init,
             Core::Sha256Iv => &simplicity_sys::c_jets::jets_wrapper::sha_256_iv,
             Core::Some1 => &simplicity_sys::c_jets::jets_wrapper::some_1,
