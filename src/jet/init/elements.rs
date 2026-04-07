@@ -981,7 +981,10 @@ type Out = crate::effects::OutputSelector;
 
 /// `inputOutpointsHash`: isPegin, pegin, prevOutpoint.txid, prevOutpoint.ix
 fn input_outpoints_hash_fields(selector: In) -> Vec<F> {
-    vec![F::InputPrevOutpoint(selector.clone()), F::InputPegin(selector)]
+    vec![
+        F::InputPrevOutpoint(selector.clone()),
+        F::InputPegin(selector),
+    ]
 }
 
 /// `inputSequencesHash`: sequence
@@ -1047,12 +1050,18 @@ fn input_utxos_hash_fields() -> Vec<F> {
 
 /// `issuanceAssetAmountsHash`: issuance.type, issuance.assetId, issuance.assetAmt
 fn issuance_asset_amounts_hash_fields(selector: In) -> Vec<F> {
-    vec![F::IssuancePresent(selector.clone()), F::IssuanceAssetAmount(selector)]
+    vec![
+        F::IssuancePresent(selector.clone()),
+        F::IssuanceAssetAmount(selector),
+    ]
 }
 
 /// `issuanceTokenAmountsHash`: issuance.type, issuance.tokenId, issuance.tokenAmt
 fn issuance_token_amounts_hash_fields(selector: In) -> Vec<F> {
-    vec![F::IssuancePresent(selector.clone()), F::IssuanceTokenAmount(selector)]
+    vec![
+        F::IssuancePresent(selector.clone()),
+        F::IssuanceTokenAmount(selector),
+    ]
 }
 
 /// `issuanceRangeProofsHash`: assetRangeProofHash, tokenRangeProofHash
@@ -8869,6 +8878,7 @@ impl Jet for Elements {
             Elements::InputScriptSigHash => vec![TF::InputScriptSigHash(Indexed)],
             Elements::InputSequence => vec![TF::InputSequence(Indexed)],
             // ── Input aggregate hash jets ─────────────────────────────────
+            // Pure hash combinator: hashes data passed on the stack, not from the env.
             Elements::AnnexHash => vec![],
             Elements::InputAmountsHash => input_asset_amounts_hash_fields(In::All),
             Elements::InputAnnexesHash => input_annexes_hash_fields(In::All),
@@ -8919,8 +8929,10 @@ impl Jet for Elements {
             }
             // ── Output aggregate hash jets ────────────────────────────────
             // `asset_amount_hash` / `output_amounts_hash`: outputAssetAmountsHash
+            // Pure hash combinator: hashes data passed on the stack, not from the env.
             Elements::AssetAmountHash => vec![],
             Elements::OutputAmountsHash => output_asset_amounts_hash_fields(OutputSelector::All),
+            // Pure hash combinator: hashes data passed on the stack, not from the env.
             Elements::NonceHash => vec![],
             Elements::OutputNoncesHash => output_nonces_hash_fields(OutputSelector::All),
             Elements::OutputRangeProofsHash => output_range_proofs_hash_fields(OutputSelector::All),
@@ -8942,8 +8954,8 @@ impl Jet for Elements {
             Elements::NumInputs => vec![TF::InputCount],
             Elements::NumOutputs => vec![TF::OutputCount],
             Elements::TotalFee => vec![
-                TF::OutputIsFee(OutputSelector::Indexed),
-                TF::OutputAmount(OutputSelector::Indexed),
+                // TF::OutputIsFee(OutputSelector::Indexed),
+                // TF::OutputAmount(OutputSelector::Indexed),
                 TF::TotalFee,
             ],
             Elements::Version => vec![TF::Version],

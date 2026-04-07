@@ -623,10 +623,10 @@ pub fn enumerate_code_paths<J: Jet>(
                 let (mut lp, lt) = walk(l, sids, max);
                 let (mut rp, rt) = walk(r, sids, max);
                 for p in &mut lp {
-                    p.choices.insert(0, (sid, BranchArm::Left));
+                    p.choices.push((sid, BranchArm::Left));
                 }
                 for p in &mut rp {
-                    p.choices.insert(0, (sid, BranchArm::Right));
+                    p.choices.push((sid, BranchArm::Right));
                 }
                 lp.extend(rp);
                 let truncated = lt || rt || lp.len() > max;
@@ -667,7 +667,11 @@ pub fn enumerate_code_paths<J: Jet>(
         }
     }
 
-    walk(root, &sids, max_paths)
+    let (mut paths, truncated) = walk(root, &sids, max_paths);
+    for p in &mut paths {
+        p.choices.reverse();
+    }
+    (paths, truncated)
 }
 
 impl fmt::Display for InputSelector {
@@ -829,7 +833,6 @@ impl TransactionField {
             TransactionField::IssuanceTokenAmount(AllIn),
             TransactionField::IssuanceTokenProof(AllIn),
             TransactionField::IssuanceAssetProof(AllIn),
-            TransactionField::IssuancePresent(AllIn),
             TransactionField::ReissuanceBlinding(AllIn),
             TransactionField::NewIssuanceContract(AllIn),
             TransactionField::IssuanceEntropy(AllIn),

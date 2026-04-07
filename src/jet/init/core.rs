@@ -6461,6 +6461,17 @@ impl Jet for Core {
         }
     }
 
+    fn has_write_effect(&self) -> bool {
+        matches!(
+            self,
+            Core::Bip0340Verify
+                | Core::CheckSigVerify
+                | Core::LinearVerify1
+                | Core::PointVerify1
+                | Core::Verify
+        )
+    }
+
     fn cost(&self) -> Cost {
         match self {
             Core::Add16 => Cost::from_milliweight(108),
