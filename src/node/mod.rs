@@ -758,7 +758,7 @@ impl<N: Marker> Node<N> {
     }
 
     /// Encode a Simplicity expression to bits without any witness data.
-    pub fn encode_without_witness<W: io::Write>(&self, prog: W) -> io::Result<usize> {
+    pub fn encode_without_witness(&self, prog: &mut dyn io::Write) -> io::Result<usize> {
         let mut w = BitWriter::new(prog);
         let program_bits = encode::encode_program(self, &mut w)?;
         w.flush_all()?;
@@ -779,10 +779,10 @@ impl<N: Marker<Witness = Value>> Node<N> {
     /// Encode the program and witness data to bits.
     ///
     /// Returns the number of written bits for the program and witness, respectively.
-    pub fn encode_with_witness<W1: io::Write, W2: io::Write>(
+    pub fn encode_with_witness(
         &self,
-        prog: W1,
-        witness: W2,
+        prog: &mut dyn io::Write,
+        witness: &mut dyn io::Write,
     ) -> io::Result<(usize, usize)> {
         let mut prog = BitWriter::new(prog);
         let mut witness = BitWriter::new(witness);

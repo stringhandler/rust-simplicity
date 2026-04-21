@@ -495,7 +495,7 @@ fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSe
         Some(Token::Jet(ref name)) => {
             let jet_name = name.clone();
             p.advance();
-            let Ok(jet) = J::from_str(&jet_name[4..]) else {
+            let Ok(jet) = J::parse(&jet_name[4..]) else {
                 return Err(ErrorSet::single(position, Error::UnknownJet(jet_name)));
             };
             Ok(Expression {
