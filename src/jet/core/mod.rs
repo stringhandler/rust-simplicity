@@ -2,7 +2,6 @@
 
 use super::init::core::Core;
 use super::JetEnvironment;
-use crate::jet::Jet;
 use simplicity_sys::c_jets::frame_ffi::CFrameItem;
 
 /// Type alias for the Core jet environment.
@@ -27,7 +26,7 @@ impl JetEnvironment for CoreEnv {
 
     fn c_jet_ptr(
         jet: &Self::Jet,
-    ) -> &dyn Fn(&mut CFrameItem, CFrameItem, &Self::CJetEnvironment) -> bool {
-        jet.c_jet_ptr()
+    ) -> fn(&mut CFrameItem, CFrameItem, &Self::CJetEnvironment) -> bool {
+        super::init::core::c_jet_ptr(jet)
     }
 }

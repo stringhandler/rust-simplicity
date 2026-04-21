@@ -6,7 +6,6 @@ pub use environment::BitcoinEnv;
 
 use super::init::bitcoin::Bitcoin;
 use super::JetEnvironment;
-use crate::jet::Jet;
 use simplicity_sys::c_jets::frame_ffi::CFrameItem;
 
 impl JetEnvironment for BitcoinEnv {
@@ -19,7 +18,7 @@ impl JetEnvironment for BitcoinEnv {
 
     fn c_jet_ptr(
         jet: &Self::Jet,
-    ) -> &dyn Fn(&mut CFrameItem, CFrameItem, &Self::CJetEnvironment) -> bool {
-        jet.c_jet_ptr()
+    ) -> fn(&mut CFrameItem, CFrameItem, &Self::CJetEnvironment) -> bool {
+        super::init::bitcoin::c_jet_ptr(jet)
     }
 }

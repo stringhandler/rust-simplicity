@@ -258,7 +258,7 @@ impl<'brand, J: Jet> ConstructNode<'brand, J> {
 
     /// Encode a Simplicity expression to bits, with no witness data
     #[deprecated(since = "0.5.0", note = "use Self::encode_without_witness instead")]
-    pub fn encode<W: io::Write>(&self, w: &mut BitWriter<W>) -> io::Result<usize> {
+    pub fn encode(&self, w: &mut BitWriter<&mut dyn io::Write>) -> io::Result<usize> {
         let program_bits = encode::encode_program(self, w)?;
         w.flush_all()?;
         Ok(program_bits)

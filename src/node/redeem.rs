@@ -580,15 +580,11 @@ impl<J: Jet> RedeemNode<J> {
     ///
     /// Includes witness data. Returns the number of written bits.
     #[deprecated(since = "0.5.0", note = "use Self::encode_with_witness instead")]
-    pub fn encode<W1, W2>(
+    pub fn encode(
         &self,
-        prog: &mut BitWriter<W1>,
-        witness: &mut BitWriter<W2>,
-    ) -> io::Result<usize>
-    where
-        W1: io::Write,
-        W2: io::Write,
-    {
+        prog: &mut BitWriter<&mut dyn io::Write>,
+        witness: &mut BitWriter<&mut dyn io::Write>,
+    ) -> io::Result<usize> {
         let sharing_iter = self.post_order_iter::<MaxSharing<Redeem<J>>>();
         let program_bits = encode::encode_program(self, prog)?;
         prog.flush_all()?;
