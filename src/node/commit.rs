@@ -12,31 +12,27 @@ use super::{
 };
 
 use std::io;
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub struct Commit<J> {
+pub struct Commit {
     /// Makes the type non-constructible.
     never: std::convert::Infallible,
-    /// Required by Rust.
-    phantom: std::marker::PhantomData<J>,
 }
 
-impl<J: Jet> Marker for Commit<J> {
-    type CachedData = Arc<CommitData<J>>;
+impl Marker for Commit {
+    type CachedData = Arc<CommitData>;
     type Witness = NoWitness;
     type Disconnect = NoDisconnect;
     type SharingId = Ihr;
-    type Jet = J;
 
-    fn compute_sharing_id(_: Cmr, cached_data: &Arc<CommitData<J>>) -> Option<Ihr> {
+    fn compute_sharing_id(_: Cmr, cached_data: &Arc<CommitData>) -> Option<Ihr> {
         cached_data.ihr
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct CommitData<J> {
+pub struct CommitData {
     /// The source and target types of the node
     arrow: FinalArrow,
     /// The IMR of the node if it exists. This is distinct from its IHR; it is
@@ -48,13 +44,9 @@ pub struct CommitData<J> {
     /// The IHR of the node if it exists, meaning, if it is not (an ancestor of)
     /// a witness or disconnect node.
     ihr: Option<Ihr>,
-    /// This isn't really necessary, but it helps type inference if every
-    /// struct has a \<J\> parameter, since it forces the choice of jets to
-    /// be consistent without the user needing to specify it too many times.
-    phantom: PhantomData<J>,
 }
 
-impl<J: Jet> CommitData<J> {
+impl CommitData {
     /// Accessor for the node's arrow
     pub fn arrow(&self) -> &FinalArrow {
         &self.arrow
@@ -67,7 +59,7 @@ impl<J: Jet> CommitData<J> {
 
     /// Helper function to compute a cached AMR
     fn incomplete_amr(
-        inner: Inner<&Arc<Self>, J, &NoDisconnect, &NoWitness>,
+        inner: Inner<&Arc<Self>, &NoDisconnect, &NoWitness>,
         arrow: &FinalArrow,
     ) -> Option<Amr> {
         match inner {
@@ -97,13 +89,13 @@ impl<J: Jet> CommitData<J> {
             Inner::Disconnect(..) => None,
             Inner::Witness(..) => None,
             Inner::Fail(entropy) => Some(Amr::fail(entropy)),
-            Inner::Jet(jet) => Some(Amr::jet(jet)),
+            Inner::Jet(jet) => Some(Amr::jet(jet.as_ref())),
             Inner::Word(ref val) => Some(Amr::const_word(val)),
         }
     }
 
     /// Helper function to compute a cached first-pass IHR
-    fn imr(inner: Inner<&Arc<Self>, J, &NoDisconnect, &NoWitness>) -> Option<Imr> {
+    fn imr(inner: Inner<&Arc<Self>, &NoDisconnect, &NoWitness>) -> Option<Imr> {
         match inner {
             Inner::Iden => Some(Imr::iden()),
             Inner::Unit => Some(Imr::unit()),
@@ -119,14 +111,14 @@ impl<J: Jet> CommitData<J> {
             Inner::Disconnect(..) => None,
             Inner::Witness(..) => None,
             Inner::Fail(entropy) => Some(Imr::fail(entropy)),
-            Inner::Jet(jet) => Some(Imr::jet(jet)),
+            Inner::Jet(jet) => Some(Imr::jet(jet.as_ref())),
             Inner::Word(ref val) => Some(Imr::const_word(val)),
         }
     }
 
     pub fn new(
         arrow: &Arrow,
-        inner: Inner<&Arc<Self>, J, &NoDisconnect, &NoWitness>,
+        inner: Inner<&Arc<Self>, &NoDisconnect, &NoWitness>,
     ) -> Result<Self, types::Error> {
         let final_arrow = arrow.finalize()?;
         let imr = Self::imr(inner.clone());
@@ -136,13 +128,12 @@ impl<J: Jet> CommitData<J> {
             amr,
             ihr: imr.map(|ihr| Ihr::from_imr(ihr, &final_arrow)),
             arrow: final_arrow,
-            phantom: PhantomData,
         })
     }
 
     pub fn from_final(
         arrow: FinalArrow,
-        inner: Inner<&Arc<Self>, J, &NoDisconnect, &NoWitness>,
+        inner: Inner<&Arc<Self>, &NoDisconnect, &NoWitness>,
     ) -> Self {
         let imr = Self::imr(inner.clone());
         let amr = Self::incomplete_amr(inner, &arrow);
@@ -151,14 +142,13 @@ impl<J: Jet> CommitData<J> {
             amr,
             ihr: imr.map(|ihr| Ihr::from_imr(ihr, &arrow)),
             arrow,
-            phantom: PhantomData,
         }
     }
 }
 
-pub type CommitNode<J> = Node<Commit<J>>;
+pub type CommitNode = Node<Commit>;
 
-impl<J: Jet> CommitNode<J> {
+impl CommitNode {
     /// Accessor for the node's arrow
     pub fn arrow(&self) -> &FinalArrow {
         &self.data.arrow
@@ -179,28 +169,27 @@ impl<J: Jet> CommitNode<J> {
     ///
     /// This is a thin wrapper around [`Node::convert`] which fixes a few types to make
     /// it easier to use.
-    pub fn finalize<C: Converter<Commit<J>, Redeem<J>>>(
+    pub fn finalize<C: Converter<Commit, Redeem>>(
         &self,
         converter: &mut C,
-    ) -> Result<Arc<RedeemNode<J>>, C::Error> {
-        self.convert::<NoSharing, Redeem<J>, _>(converter)
+    ) -> Result<Arc<RedeemNode>, C::Error> {
+        self.convert::<NoSharing, Redeem, _>(converter)
     }
 
     /// Convert a [`CommitNode`] back to a [`ConstructNode`] by redoing type inference
     pub fn unfinalize_types<'brand>(
         &self,
         inference_context: &types::Context<'brand>,
-    ) -> Result<Arc<ConstructNode<'brand, J>>, types::Error> {
-        struct UnfinalizeTypes<'a, 'brand, J: Jet> {
+    ) -> Result<Arc<ConstructNode<'brand>>, types::Error> {
+        struct UnfinalizeTypes<'a, 'brand> {
             inference_context: &'a types::Context<'brand>,
-            phantom: PhantomData<J>,
         }
 
-        impl<'brand, J: Jet> Converter<Commit<J>, Construct<'brand, J>> for UnfinalizeTypes<'_, 'brand, J> {
+        impl<'brand> Converter<Commit, Construct<'brand>> for UnfinalizeTypes<'_, 'brand> {
             type Error = types::Error;
             fn convert_witness(
                 &mut self,
-                _: &PostOrderIterItem<&CommitNode<J>>,
+                _: &PostOrderIterItem<&CommitNode>,
                 _: &NoWitness,
             ) -> Result<Option<Value>, Self::Error> {
                 Ok(None)
@@ -208,23 +197,22 @@ impl<J: Jet> CommitNode<J> {
 
             fn convert_disconnect(
                 &mut self,
-                _: &PostOrderIterItem<&CommitNode<J>>,
-                _: Option<&Arc<ConstructNode<'brand, J>>>,
+                _: &PostOrderIterItem<&CommitNode>,
+                _: Option<&Arc<ConstructNode<'brand>>>,
                 _: &NoDisconnect,
-            ) -> Result<Option<Arc<ConstructNode<'brand, J>>>, Self::Error> {
+            ) -> Result<Option<Arc<ConstructNode<'brand>>>, Self::Error> {
                 Ok(None)
             }
 
             fn convert_data(
                 &mut self,
-                _: &PostOrderIterItem<&CommitNode<J>>,
+                _: &PostOrderIterItem<&CommitNode>,
                 inner: Inner<
-                    &Arc<ConstructNode<'brand, J>>,
-                    J,
-                    &Option<Arc<ConstructNode<'brand, J>>>,
+                    &Arc<ConstructNode<'brand>>,
+                    &Option<Arc<ConstructNode<'brand>>>,
                     &Option<Value>,
                 >,
-            ) -> Result<ConstructData<'brand, J>, Self::Error> {
+            ) -> Result<ConstructData<'brand>, Self::Error> {
                 let inner = inner
                     .map(|node| node.arrow())
                     .map_disconnect(|maybe_node| maybe_node.as_ref().map(|node| node.arrow()));
@@ -236,10 +224,7 @@ impl<J: Jet> CommitNode<J> {
             }
         }
 
-        self.convert::<MaxSharing<Commit<J>>, _, _>(&mut UnfinalizeTypes {
-            inference_context,
-            phantom: PhantomData,
-        })
+        self.convert::<MaxSharing<Commit>, _, _>(&mut UnfinalizeTypes { inference_context })
     }
 
     /// Decode a Simplicity program from bits, without witness data.
@@ -251,17 +236,19 @@ impl<J: Jet> CommitNode<J> {
     /// or the witness is provided by other means.
     ///
     /// If the serialization contains the witness data, then use [`RedeemNode::decode()`].
-    pub fn decode<I: Iterator<Item = u8>>(bits: BitIter<I>) -> Result<Arc<Self>, DecodeError> {
+    pub fn decode<I: Iterator<Item = u8>, J: Jet>(
+        bits: BitIter<I>,
+    ) -> Result<Arc<Self>, DecodeError> {
         use crate::decode;
 
         // 1. Decode program with out witnesses.
         let program = types::Context::with_context(|ctx| {
             let construct =
-                crate::ConstructNode::decode(&ctx, bits).map_err(DecodeError::Decode)?;
+                crate::ConstructNode::decode::<I, J>(&ctx, bits).map_err(DecodeError::Decode)?;
             construct.finalize_types().map_err(DecodeError::Type)
         })?;
         // 2. Do sharing check, using incomplete IHRs
-        if program.as_ref().is_shared_as::<MaxSharing<Commit<J>>>() {
+        if program.as_ref().is_shared_as::<MaxSharing<Commit>>() {
             Ok(program)
         } else {
             Err(DecodeError::Decode(decode::Error::SharingNotMaximal))
@@ -278,7 +265,7 @@ impl<J: Jet> CommitNode<J> {
             .decode(s)
             .map_err(crate::ParseError::Base64)?;
         let iter = crate::BitIter::new(v.into_iter());
-        Self::decode(iter).map_err(crate::ParseError::Decode)
+        Self::decode::<_, crate::jet::Core>(iter).map_err(crate::ParseError::Decode)
     }
 
     /// Encode a Simplicity expression to bits without any witness data
@@ -308,8 +295,7 @@ mod tests {
     use hex::DisplayHex;
     use std::fmt;
 
-    use crate::decode::Error;
-    use crate::jet::Core;
+    use crate::{decode::Error, jet::Core};
     #[cfg(feature = "human_encoding")]
     use crate::{human_encoding::Forest, jet::CoreEnv, node::SimpleFinalizer, BitMachine, Value};
 
@@ -321,8 +307,8 @@ mod tests {
         prog_bytes: &[u8],
         cmr_str: &str,
         b64_str: &str,
-    ) -> Arc<CommitNode<J>> {
-        let forest = match Forest::<J>::parse(prog_str) {
+    ) -> Arc<CommitNode> {
+        let forest = match Forest::parse::<J>(prog_str) {
             Ok(forest) => forest,
             Err(e) => panic!("Failed to parse program `{}`: {}", prog_str, e),
         };
@@ -349,7 +335,7 @@ mod tests {
         );
 
         let iter = BitIter::from(prog_bytes);
-        let prog = match CommitNode::<J>::decode(iter) {
+        let prog = match CommitNode::decode::<_, J>(iter) {
             Ok(prog) => prog,
             Err(e) => panic!("program {} failed: {}", prog_hex, e),
         };
@@ -388,7 +374,7 @@ mod tests {
         let err_str = err.to_string();
 
         let iter = BitIter::from(prog);
-        match CommitNode::<J>::decode(iter) {
+        match CommitNode::decode::<_, J>(iter) {
             Ok(prog) => panic!(
                 "Program {} succeded (expected error {}). Program parsed as:\n{:?}",
                 prog_hex, err, prog
@@ -591,7 +577,7 @@ mod tests {
             id := iden
             main := case (drop id) id
         ";
-        match Forest::<Core>::parse(bad_prog) {
+        match Forest::parse::<Core>(bad_prog) {
             Ok(_) => panic!("program should have failed"),
             Err(set) => {
                 let mut errs_happened = (false, false);

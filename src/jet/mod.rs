@@ -38,7 +38,9 @@ use crate::decode;
 use crate::jet::type_name::TypeName;
 use crate::merkle::cmr::Cmr;
 use crate::{BitIter, BitWriter};
-use std::hash::Hash;
+use std::any::{Any, TypeId};
+use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 use std::io::Write;
 
 /// Generic error that a jet failed during its execution.
@@ -80,7 +82,7 @@ pub trait JetEnvironment {
 /// Jets may read values from their _environment_.
 ///
 /// Jets are **always** leaves in a Simplicity DAG.
-pub trait Jet: Copy + Eq + Ord + Hash + std::fmt::Debug + std::fmt::Display + 'static {
+pub trait Jet: DynJet + std::fmt::Debug + std::fmt::Display + Send + Sync + 'static {
     /// Return the CMR of the jet.
     fn cmr(&self) -> Cmr;
 
@@ -107,6 +109,75 @@ pub trait Jet: Copy + Eq + Ord + Hash + std::fmt::Debug + std::fmt::Display + 's
         Self: Sized;
 }
 
+/// Lets `Box<dyn Jet>` work with `Clone`, `Eq`, `Ord`, and `Hash`.
+pub trait DynJet {
+    fn as_any(&self) -> &dyn Any;
+    fn dyn_clone(&self) -> Box<dyn Jet>;
+    fn dyn_eq(&self, other: &dyn Jet) -> bool;
+    fn dyn_cmp(&self, other: &dyn Jet) -> Ordering;
+    fn dyn_hash(&self, state: &mut dyn Hasher);
+}
+
+impl<T: Jet + Clone + Ord + Hash> DynJet for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn dyn_clone(&self) -> Box<dyn Jet> {
+        Box::new(self.clone())
+    }
+
+    fn dyn_eq(&self, other: &dyn Jet) -> bool {
+        other
+            .as_any()
+            .downcast_ref::<Self>()
+            .is_some_and(|other| self == other)
+    }
+
+    fn dyn_cmp(&self, other: &dyn Jet) -> Ordering {
+        match other.as_any().downcast_ref::<Self>() {
+            Some(other) => self.cmp(other),
+            None => TypeId::of::<Self>().cmp(&other.as_any().type_id()),
+        }
+    }
+
+    fn dyn_hash(&self, mut state: &mut dyn Hasher) {
+        self.hash(&mut state)
+    }
+}
+
+impl Clone for Box<dyn Jet> {
+    fn clone(&self) -> Self {
+        (**self).dyn_clone()
+    }
+}
+
+impl PartialEq for Box<dyn Jet> {
+    fn eq(&self, other: &Self) -> bool {
+        (**self).dyn_eq(&**other)
+    }
+}
+
+impl Eq for Box<dyn Jet> {}
+
+impl PartialOrd for Box<dyn Jet> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Box<dyn Jet> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (**self).dyn_cmp(&**other)
+    }
+}
+
+impl Hash for Box<dyn Jet> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (**self).dyn_hash(state)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::jet::{Core, CoreEnv};
@@ -119,13 +190,13 @@ mod tests {
     #[test]
     fn test_ffi_jet() {
         types::Context::with_context(|ctx| {
-            let two_words = Arc::<ConstructNode<_>>::comp(
-                &Arc::<ConstructNode<_>>::pair(
-                    &Arc::<ConstructNode<_>>::const_word(&ctx, Word::u32(2)),
-                    &Arc::<ConstructNode<_>>::const_word(&ctx, Word::u32(16)),
+            let two_words = Arc::<ConstructNode>::comp(
+                &Arc::<ConstructNode>::pair(
+                    &Arc::<ConstructNode>::const_word(&ctx, Word::u32(2)),
+                    &Arc::<ConstructNode>::const_word(&ctx, Word::u32(16)),
                 )
                 .unwrap(),
-                &Arc::<ConstructNode<_>>::jet(&ctx, Core::Add32),
+                &Arc::<ConstructNode>::jet(&ctx, &Core::Add32),
             )
             .unwrap();
             assert_eq!(
@@ -141,9 +212,9 @@ mod tests {
     #[test]
     fn test_simple() {
         types::Context::with_context(|ctx| {
-            let two_words = Arc::<ConstructNode<Core>>::pair(
-                &Arc::<ConstructNode<_>>::const_word(&ctx, Word::u32(2)),
-                &Arc::<ConstructNode<_>>::const_word(&ctx, Word::u16(16)),
+            let two_words = Arc::<ConstructNode>::pair(
+                &Arc::<ConstructNode>::const_word(&ctx, Word::u32(2)),
+                &Arc::<ConstructNode>::const_word(&ctx, Word::u16(16)),
             )
             .unwrap();
             assert_eq!(

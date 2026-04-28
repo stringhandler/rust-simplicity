@@ -2,7 +2,7 @@
 
 //! Serialization of Policy as Simplicity
 
-use crate::jet::{Elements, Jet};
+use crate::jet::Elements;
 use crate::merkle::cmr::ConstructibleCmr;
 use crate::node::{CoreConstructible, JetConstructible, WitnessConstructible};
 use crate::types;
@@ -32,7 +32,7 @@ impl<'brand> AssemblyConstructible<'brand> for ConstructibleCmr<'brand> {
     }
 }
 
-impl<'brand, J: Jet> AssemblyConstructible<'brand> for Arc<ConstructNode<'brand, J>> {
+impl<'brand> AssemblyConstructible<'brand> for Arc<ConstructNode<'brand>> {
     fn assembly(_: &types::Context, _cmr: Cmr) -> Option<Self> {
         None
     }
@@ -58,58 +58,62 @@ where
 pub fn key<'brand, Pk, N, W>(inference_context: &types::Context<'brand>, key: &Pk, witness: W) -> N
 where
     Pk: ToXOnlyPubkey,
-    N: CoreConstructible<'brand>
-        + JetConstructible<'brand, Elements>
-        + WitnessConstructible<'brand, W>,
+    N: CoreConstructible<'brand> + JetConstructible<'brand> + WitnessConstructible<'brand, W>,
 {
     let key_value = Word::u256(key.to_x_only_pubkey().serialize());
     let const_key = N::const_word(inference_context, key_value);
-    let sighash_all = N::jet(inference_context, Elements::SigAllHash);
+    let sighash_all = N::jet(inference_context, &Elements::SigAllHash);
     let pair_key_msg = N::pair(&const_key, &sighash_all).expect("consistent types");
     let witness = N::witness(inference_context, witness);
     let pair_key_msg_sig = N::pair(&pair_key_msg, &witness).expect("consistent types");
-    let bip_0340_verify = N::jet(inference_context, Elements::Bip0340Verify);
+    let bip_0340_verify = N::jet(inference_context, &Elements::Bip0340Verify);
 
     N::comp(&pair_key_msg_sig, &bip_0340_verify).expect("consistent types")
 }
 
 pub fn after<'brand, N>(inference_context: &types::Context<'brand>, n: u32) -> N
 where
-    N: CoreConstructible<'brand> + JetConstructible<'brand, Elements>,
+    N: CoreConstructible<'brand> + JetConstructible<'brand>,
 {
     let n_value = Word::u32(n);
     let const_n = N::const_word(inference_context, n_value);
-    let check_lock_height = N::jet(inference_context, Elements::CheckLockHeight);
+    let check_lock_height = N::jet(inference_context, &Elements::CheckLockHeight);
 
     N::comp(&const_n, &check_lock_height).expect("consistent types")
 }
 
 pub fn older<'brand, N>(inference_context: &types::Context<'brand>, n: u16) -> N
 where
-    N: CoreConstructible<'brand> + JetConstructible<'brand, Elements>,
+    N: CoreConstructible<'brand> + JetConstructible<'brand>,
 {
     let n_value = Word::u16(n);
     let const_n = N::const_word(inference_context, n_value);
-    let check_lock_distance = N::jet(inference_context, Elements::BrokenDoNotUseCheckLockDistance);
+    let check_lock_distance = N::jet(
+        inference_context,
+        &Elements::BrokenDoNotUseCheckLockDistance,
+    );
 
     N::comp(&const_n, &check_lock_distance).expect("consistent types")
 }
 
 pub fn compute_sha256<'brand, N>(witness256: &N) -> N
 where
-    N: CoreConstructible<'brand> + JetConstructible<'brand, Elements>,
+    N: CoreConstructible<'brand> + JetConstructible<'brand>,
 {
-    let ctx = N::jet(witness256.inference_context(), Elements::Sha256Ctx8Init);
+    let ctx = N::jet(witness256.inference_context(), &Elements::Sha256Ctx8Init);
     let pair_ctx_witness = N::pair(&ctx, witness256).expect("consistent types");
-    let add256 = N::jet(witness256.inference_context(), Elements::Sha256Ctx8Add32);
+    let add256 = N::jet(witness256.inference_context(), &Elements::Sha256Ctx8Add32);
     let digest_ctx = N::comp(&pair_ctx_witness, &add256).expect("consistent types");
-    let finalize = N::jet(witness256.inference_context(), Elements::Sha256Ctx8Finalize);
+    let finalize = N::jet(
+        witness256.inference_context(),
+        &Elements::Sha256Ctx8Finalize,
+    );
     N::comp(&digest_ctx, &finalize).expect("consistent types")
 }
 
 pub fn verify_bexp<'brand, N>(input: &N, bexp: &N) -> N
 where
-    N: CoreConstructible<'brand> + JetConstructible<'brand, Elements>,
+    N: CoreConstructible<'brand> + JetConstructible<'brand>,
 {
     assert_eq!(
         input.inference_context(),
@@ -117,7 +121,7 @@ where
         "cannot compose policy fragments with different type inference contexts",
     );
     let computed_bexp = N::comp(input, bexp).expect("consistent types");
-    let verify = N::jet(input.inference_context(), Elements::Verify);
+    let verify = N::jet(input.inference_context(), &Elements::Verify);
     N::comp(&computed_bexp, &verify).expect("consistent types")
 }
 
@@ -128,16 +132,14 @@ pub fn sha256<'brand, Pk, N, W>(
 ) -> N
 where
     Pk: ToXOnlyPubkey,
-    N: CoreConstructible<'brand>
-        + JetConstructible<'brand, Elements>
-        + WitnessConstructible<'brand, W>,
+    N: CoreConstructible<'brand> + JetConstructible<'brand> + WitnessConstructible<'brand, W>,
 {
     let hash_value = Word::u256(Pk::to_sha256(hash).to_byte_array());
     let const_hash = N::const_word(inference_context, hash_value);
     let witness256 = N::witness(inference_context, witness);
     let computed_hash = compute_sha256(&witness256);
     let pair_hash_computed_hash = N::pair(&const_hash, &computed_hash).expect("consistent types");
-    let eq256 = N::jet(inference_context, Elements::Eq256);
+    let eq256 = N::jet(inference_context, &Elements::Eq256);
 
     verify_bexp(&pair_hash_computed_hash, &eq256)
 }
@@ -208,7 +210,7 @@ where
 /// add(sum, summand): 1 → 2^32
 pub fn thresh_add<'brand, N>(sum: &N, summand: &N) -> N
 where
-    N: CoreConstructible<'brand> + JetConstructible<'brand, Elements>,
+    N: CoreConstructible<'brand> + JetConstructible<'brand>,
 {
     assert_eq!(
         sum.inference_context(),
@@ -218,7 +220,7 @@ where
     // 1 → 2^32 × 2^32
     let pair_sum_summand = N::pair(sum, summand).expect("consistent types");
     // 2^32 × 2^32 → 2 × 2^32
-    let add32 = N::jet(sum.inference_context(), Elements::Add32);
+    let add32 = N::jet(sum.inference_context(), &Elements::Add32);
     // 1 → 2 x 2^32
     let full_sum = N::comp(&pair_sum_summand, &add32).expect("consistent types");
     // 2^32 → 2^32
@@ -235,14 +237,14 @@ where
 /// verify(sum): 1 → 1
 pub fn thresh_verify<'brand, N>(sum: &N, k: u32) -> N
 where
-    N: CoreConstructible<'brand> + JetConstructible<'brand, Elements>,
+    N: CoreConstructible<'brand> + JetConstructible<'brand>,
 {
     // 1 → 2^32
     let const_k = N::const_word(sum.inference_context(), Word::u32(k));
     // 1 → 2^32 × 2^32
     let pair_k_sum = N::pair(&const_k, sum).expect("consistent types");
     // 2^32 × 2^32 → 2
-    let eq32 = N::jet(sum.inference_context(), Elements::Eq32);
+    let eq32 = N::jet(sum.inference_context(), &Elements::Eq32);
 
     // 1 → 1
     verify_bexp(&pair_k_sum, &eq32)
@@ -250,9 +252,7 @@ where
 
 pub fn threshold<'brand, N, W>(k: u32, subs: &[N], witness_bits: &[W]) -> N
 where
-    N: CoreConstructible<'brand>
-        + JetConstructible<'brand, Elements>
-        + WitnessConstructible<'brand, W>,
+    N: CoreConstructible<'brand> + JetConstructible<'brand> + WitnessConstructible<'brand, W>,
     W: Clone,
 {
     let n = u32::try_from(subs.len()).expect("can have at most 2^32 children in a threshold");
@@ -270,7 +270,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::jet::elements::ElementsEnv;
     use crate::node::SimpleFinalizer;
     use crate::policy::Policy;
@@ -283,10 +282,7 @@ mod tests {
 
     fn compile(
         policy: Policy<XOnlyPublicKey>,
-    ) -> (
-        Arc<CommitNode<Elements>>,
-        ElementsEnv<Arc<elements::Transaction>>,
-    ) {
+    ) -> (Arc<CommitNode>, ElementsEnv<Arc<elements::Transaction>>) {
         let commit = policy.commit().expect("no asm");
         let env = ElementsEnv::dummy();
 
@@ -294,7 +290,7 @@ mod tests {
     }
 
     fn execute_successful(
-        commit: &CommitNode<Elements>,
+        commit: &CommitNode,
         witness: Vec<Value>,
         env: &ElementsEnv<Arc<elements::Transaction>>,
     ) -> bool {

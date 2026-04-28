@@ -16,7 +16,6 @@
 //!
 
 use crate::dag::PostOrderIterItem;
-use crate::jet::Jet;
 use crate::Value;
 
 use super::{
@@ -142,7 +141,7 @@ pub trait Converter<N: Marker, M: Marker> {
     fn convert_data(
         &mut self,
         data: &PostOrderIterItem<&Node<N>>,
-        inner: Inner<&Arc<Node<M>>, M::Jet, &M::Disconnect, &M::Witness>,
+        inner: Inner<&Arc<Node<M>>, &M::Disconnect, &M::Witness>,
     ) -> Result<M::CachedData, Self::Error>;
 }
 
@@ -168,12 +167,12 @@ impl<W: Iterator<Item = Value>> SimpleFinalizer<W> {
     }
 }
 
-impl<W: Iterator<Item = Value>, J: Jet> Converter<Commit<J>, Redeem<J>> for SimpleFinalizer<W> {
+impl<W: Iterator<Item = Value>> Converter<Commit, Redeem> for SimpleFinalizer<W> {
     type Error = crate::FinalizeError;
 
     fn convert_witness(
         &mut self,
-        data: &PostOrderIterItem<&CommitNode<J>>,
+        data: &PostOrderIterItem<&CommitNode>,
         _: &NoWitness,
     ) -> Result<Value, Self::Error> {
         Ok(self
@@ -184,18 +183,18 @@ impl<W: Iterator<Item = Value>, J: Jet> Converter<Commit<J>, Redeem<J>> for Simp
 
     fn convert_disconnect(
         &mut self,
-        _: &PostOrderIterItem<&CommitNode<J>>,
-        _: Option<&Arc<RedeemNode<J>>>,
+        _: &PostOrderIterItem<&CommitNode>,
+        _: Option<&Arc<RedeemNode>>,
         _: &NoDisconnect,
-    ) -> Result<Arc<RedeemNode<J>>, Self::Error> {
+    ) -> Result<Arc<RedeemNode>, Self::Error> {
         Err(crate::FinalizeError::DisconnectRedeemTime)
     }
 
     fn convert_data(
         &mut self,
-        data: &PostOrderIterItem<&CommitNode<J>>,
-        inner: Inner<&Arc<RedeemNode<J>>, J, &Arc<RedeemNode<J>>, &Value>,
-    ) -> Result<Arc<RedeemData<J>>, Self::Error> {
+        data: &PostOrderIterItem<&CommitNode>,
+        inner: Inner<&Arc<RedeemNode>, &Arc<RedeemNode>, &Value>,
+    ) -> Result<Arc<RedeemData>, Self::Error> {
         let converted_data = inner
             .map(|node| node.cached_data())
             .map_disconnect(|node| node.cached_data())

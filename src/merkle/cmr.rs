@@ -93,7 +93,7 @@ impl Cmr {
     }
 
     /// Produce a CMR for a jet
-    pub fn jet<J: Jet>(jet: J) -> Self {
+    pub fn jet(jet: &dyn Jet) -> Self {
         jet.cmr()
     }
 
@@ -378,8 +378,8 @@ impl<'brand, W> WitnessConstructible<'brand, W> for ConstructibleCmr<'brand> {
     }
 }
 
-impl<'brand, J: Jet> JetConstructible<'brand, J> for ConstructibleCmr<'brand> {
-    fn jet(inference_context: &types::Context<'brand>, jet: J) -> Self {
+impl<'brand> JetConstructible<'brand> for ConstructibleCmr<'brand> {
+    fn jet(inference_context: &types::Context<'brand>, jet: &dyn Jet) -> Self {
         ConstructibleCmr {
             cmr: jet.cmr(),
             inference_context: inference_context.shallow_clone(),
@@ -391,7 +391,6 @@ impl<'brand, J: Jet> JetConstructible<'brand, J> for ConstructibleCmr<'brand> {
 mod tests {
     use super::*;
 
-    use crate::jet::Core;
     use crate::node::{ConstructNode, CoreConstructible};
 
     use std::str::FromStr;
@@ -400,7 +399,7 @@ mod tests {
     #[test]
     fn cmr_display_unit() {
         types::Context::with_context(|ctx| {
-            let c = Arc::<ConstructNode<Core>>::unit(&ctx);
+            let c = Arc::<ConstructNode>::unit(&ctx);
 
             assert_eq!(
                 c.cmr().to_string(),
@@ -429,11 +428,11 @@ mod tests {
     #[test]
     fn bit_cmr() {
         types::Context::with_context(|ctx| {
-            let unit = Arc::<ConstructNode<Core>>::unit(&ctx);
-            let bit0 = Arc::<ConstructNode<Core>>::injl(&unit);
+            let unit = Arc::<ConstructNode>::unit(&ctx);
+            let bit0 = Arc::<ConstructNode>::injl(&unit);
             assert_eq!(bit0.cmr(), Cmr::BITS[0]);
 
-            let bit1 = Arc::<ConstructNode<_>>::injr(&unit);
+            let bit1 = Arc::<ConstructNode>::injr(&unit);
             assert_eq!(bit1.cmr(), Cmr::BITS[1]);
         });
     }
@@ -483,13 +482,10 @@ mod tests {
     #[test]
     fn const_bits() {
         /// The scribe expression, as defined in the Simplicity tech report.
-        fn scribe<'brand>(
-            ctx: &types::Context<'brand>,
-            bit: u8,
-        ) -> Arc<ConstructNode<'brand, Core>> {
+        fn scribe<'brand>(ctx: &types::Context<'brand>, bit: u8) -> Arc<ConstructNode<'brand>> {
             match bit {
-                0 => Arc::<ConstructNode<Core>>::injl(&Arc::<ConstructNode<Core>>::unit(ctx)),
-                1 => Arc::<ConstructNode<Core>>::injr(&Arc::<ConstructNode<Core>>::unit(ctx)),
+                0 => Arc::<ConstructNode>::injl(&Arc::<ConstructNode>::unit(ctx)),
+                1 => Arc::<ConstructNode>::injr(&Arc::<ConstructNode>::unit(ctx)),
                 _ => panic!("Unexpected bit {bit}"),
             }
         }

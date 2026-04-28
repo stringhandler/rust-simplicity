@@ -32,7 +32,7 @@ fn do_test(data: &[u8]) {
         let prog = finalized.encode_to_vec();
         //println!("{}", simplicity::bitcoin::hex::DisplayHex::as_hex(&prog));
         let prog = BitIter::from(prog);
-        let decode = CommitNode::<Core>::decode(prog).unwrap();
+        let decode = CommitNode::decode::<_, Core>(prog).unwrap();
         assert_eq!(
             finalized, decode,
             "Constructed committed LHS; encoded and decoded to get RHS",

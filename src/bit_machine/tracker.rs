@@ -10,7 +10,6 @@
 
 use std::collections::HashSet;
 
-use crate::jet::Jet;
 use crate::node::Inner;
 use crate::{Ihr, RedeemNode, Value};
 
@@ -42,7 +41,7 @@ pub enum NodeOutput<'m> {
 /// [`RedeemNode::prune_with_tracker`] to prune the program. The most straightforward
 /// way to do this is to embed a [`SetTracker`] in your tracker and forward all the trait
 /// methods to that.
-pub trait ExecTracker<J: Jet> {
+pub trait ExecTracker {
     /// Called immediately after a specific node of the program is executed, but before
     /// its children are executed.
     ///
@@ -60,11 +59,10 @@ pub trait ExecTracker<J: Jet> {
     ///   * `input` is an iterator over the read frame when the node's execution began
     ///   * for terminal nodes (`witness`, `unit`, `iden` and jets), `output` is an iterator
     ///     the write frame after the node has executed. See [`NodeOutput`] for more information.
-    fn visit_node(&mut self, _node: &RedeemNode<J>, _input: super::FrameIter, _output: NodeOutput) {
-    }
+    fn visit_node(&mut self, _node: &RedeemNode, _input: super::FrameIter, _output: NodeOutput) {}
 }
 
-pub trait PruneTracker<J: Jet>: ExecTracker<J> {
+pub trait PruneTracker: ExecTracker {
     /// Returns true if the left branch of the of the `Case` node with the IHR `ihr` was taken.
     fn contains_left(&self, ihr: Ihr) -> bool;
 
@@ -79,10 +77,10 @@ pub struct SetTracker {
     right: HashSet<Ihr>,
 }
 
-impl<J: Jet> ExecTracker<J> for SetTracker {
+impl ExecTracker for SetTracker {
     fn visit_node<'d>(
         &mut self,
-        node: &RedeemNode<J>,
+        node: &RedeemNode,
         mut input: super::FrameIter,
         _output: NodeOutput,
     ) {
@@ -98,7 +96,7 @@ impl<J: Jet> ExecTracker<J> for SetTracker {
     }
 }
 
-impl<J: Jet> PruneTracker<J> for SetTracker {
+impl PruneTracker for SetTracker {
     fn contains_left(&self, ihr: Ihr) -> bool {
         self.left.contains(&ihr)
     }
@@ -112,10 +110,10 @@ impl<J: Jet> PruneTracker<J> for SetTracker {
 #[derive(Copy, Clone, Debug)]
 pub struct NoTracker;
 
-impl<J: Jet> ExecTracker<J> for NoTracker {
+impl ExecTracker for NoTracker {
     fn visit_node<'d>(
         &mut self,
-        node: &RedeemNode<J>,
+        node: &RedeemNode,
         mut input: super::FrameIter,
         output: NodeOutput,
     ) {
@@ -146,8 +144,8 @@ impl StderrTracker {
     }
 }
 
-impl<J: Jet> ExecTracker<J> for StderrTracker {
-    fn visit_node(&mut self, node: &RedeemNode<J>, input: super::FrameIter, output: NodeOutput) {
+impl ExecTracker for StderrTracker {
+    fn visit_node(&mut self, node: &RedeemNode, input: super::FrameIter, output: NodeOutput) {
         let input_val = Value::from_padded_bits(&mut input.clone(), &node.arrow().source)
             .expect("input from bit machine will always be well-formed");
         eprintln!(
@@ -176,15 +174,15 @@ impl<J: Jet> ExecTracker<J> for StderrTracker {
             eprintln!("      [debug] assertL CMR {cmr}");
         }
 
-        ExecTracker::<J>::visit_node(&mut self.inner, node, input, output);
+        ExecTracker::visit_node(&mut self.inner, node, input, output);
         self.exec_count += 1;
         eprintln!();
     }
 }
 
-impl<J: Jet> PruneTracker<J> for StderrTracker {
+impl PruneTracker for StderrTracker {
     fn contains_left(&self, ihr: Ihr) -> bool {
-        if PruneTracker::<J>::contains_left(&self.inner, ihr) {
+        if PruneTracker::contains_left(&self.inner, ihr) {
             true
         } else {
             eprintln!("Pruning unexecuted left child of IHR {ihr}");
@@ -193,7 +191,7 @@ impl<J: Jet> PruneTracker<J> for StderrTracker {
     }
 
     fn contains_right(&self, ihr: Ihr) -> bool {
-        if PruneTracker::<J>::contains_right(&self.inner, ihr) {
+        if PruneTracker::contains_right(&self.inner, ihr) {
             true
         } else {
             eprintln!("Pruning unexecuted right child of IHR {ihr}");

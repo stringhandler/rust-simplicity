@@ -36,12 +36,12 @@
 //! ```rust
 //! use simplicity::node::CoreConstructible;
 //! use simplicity::types::Context;
-//! use simplicity::{ConstructNode, jet::Core};
+//! use simplicity::ConstructNode;
 //! use std::sync::Arc;
 //!
 //! // Create a trivial Simplicity program
 //! let program = Context::with_context(|ctx| {
-//!     let construct = Arc::<ConstructNode<Core>>::unit(&ctx);
+//!     let construct = Arc::<ConstructNode>::unit(&ctx);
 //!     construct.finalize_types().unwrap()
 //! });
 //!

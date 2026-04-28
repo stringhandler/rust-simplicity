@@ -110,9 +110,6 @@ pub trait Marker:
     /// during iteration over the DAG.
     type SharingId: hash::Hash + Clone + Eq;
 
-    /// The jet catalogue used with this node type.
-    type Jet: Jet;
-
     /// Yields the sharing ID for a given type, starting from its CMR and its cached data.
     ///
     /// If the type cannot be uniquely identified (e.g. because it is missing data), then
@@ -131,8 +128,8 @@ impl From<NoWitness> for Option<Value> {
     }
 }
 
-pub trait Constructible<'brand, J, X, W>:
-    JetConstructible<'brand, J>
+pub trait Constructible<'brand, X, W>:
+    JetConstructible<'brand>
     + DisconnectConstructible<'brand, X>
     + WitnessConstructible<'brand, W>
     + CoreConstructible<'brand>
@@ -140,7 +137,7 @@ pub trait Constructible<'brand, J, X, W>:
 {
     fn from_inner(
         inference_context: &types::Context<'brand>,
-        inner: Inner<&Self, J, &X, W>,
+        inner: Inner<&Self, &X, W>,
     ) -> Result<Self, types::Error> {
         match inner {
             Inner::Iden => Ok(Self::iden(inference_context)),
@@ -157,15 +154,15 @@ pub trait Constructible<'brand, J, X, W>:
             Inner::Disconnect(left, right) => Self::disconnect(left, right),
             Inner::Fail(entropy) => Ok(Self::fail(inference_context, entropy)),
             Inner::Word(ref w) => Ok(Self::const_word(inference_context, w.shallow_clone())),
-            Inner::Jet(j) => Ok(Self::jet(inference_context, j)),
+            Inner::Jet(j) => Ok(Self::jet(inference_context, j.as_ref())),
             Inner::Witness(w) => Ok(Self::witness(inference_context, w)),
         }
     }
 }
 
-impl<'brand, J, X, W, T> Constructible<'brand, J, X, W> for T where
+impl<'brand, X, W, T> Constructible<'brand, X, W> for T where
     T: DisconnectConstructible<'brand, X>
-        + JetConstructible<'brand, J>
+        + JetConstructible<'brand>
         + WitnessConstructible<'brand, W>
         + CoreConstructible<'brand>
         + Sized
@@ -347,8 +344,8 @@ pub trait DisconnectConstructible<'brand, X>: Sized {
     fn disconnect(left: &Self, right: &X) -> Result<Self, types::Error>;
 }
 
-pub trait JetConstructible<'brand, J>: Sized {
-    fn jet(inference_context: &types::Context<'brand>, jet: J) -> Self;
+pub trait JetConstructible<'brand>: Sized {
+    fn jet(inference_context: &types::Context<'brand>, jet: &dyn Jet) -> Self;
 }
 
 pub trait WitnessConstructible<'brand, W>: Sized {
@@ -369,7 +366,7 @@ pub trait WitnessConstructible<'brand, W>: Sized {
 /// for [`Marker::CachedData`] and think carefully about whether and how to
 /// implement the [`std::hash::Hash`] or equality traits.
 pub struct Node<N: Marker> {
-    inner: Inner<Arc<Node<N>>, N::Jet, N::Disconnect, N::Witness>,
+    inner: Inner<Arc<Node<N>>, N::Disconnect, N::Witness>,
     cmr: Cmr,
     data: N::CachedData,
 }
@@ -575,23 +572,23 @@ where
     }
 }
 
-impl<'brand, N> JetConstructible<'brand, N::Jet> for Arc<Node<N>>
+impl<'brand, N> JetConstructible<'brand> for Arc<Node<N>>
 where
     N: Marker,
-    N::CachedData: JetConstructible<'brand, N::Jet>,
+    N::CachedData: JetConstructible<'brand>,
 {
-    fn jet(inference_context: &types::Context<'brand>, jet: N::Jet) -> Self {
+    fn jet(inference_context: &types::Context<'brand>, jet: &dyn Jet) -> Self {
         Arc::new(Node {
             cmr: Cmr::jet(jet),
             data: N::CachedData::jet(inference_context, jet),
-            inner: Inner::Jet(jet),
+            inner: Inner::Jet(jet.dyn_clone()),
         })
     }
 }
 
 impl<N: Marker> Node<N> {
     /// Accessor for the node's "inner value", i.e. its combinator
-    pub fn inner(&self) -> &Inner<Arc<Node<N>>, N::Jet, N::Disconnect, N::Witness> {
+    pub fn inner(&self) -> &Inner<Arc<Node<N>>, N::Disconnect, N::Witness> {
         &self.inner
     }
 
@@ -619,10 +616,10 @@ impl<N: Marker> Node<N> {
     /// If available, [`Constructible`] and its dependent traits will be easier to
     /// use.
     pub fn from_parts(
-        inner: Inner<Arc<Self>, N::Jet, N::Disconnect, N::Witness>,
+        inner: Inner<Arc<Self>, N::Disconnect, N::Witness>,
         data: N::CachedData,
     ) -> Self {
-        let cmr = match inner {
+        let cmr = match &inner {
             Inner::Unit => Cmr::unit(),
             Inner::Iden => Cmr::iden(),
             Inner::InjL(ref c) => Cmr::injl(c.cmr()),
@@ -631,13 +628,13 @@ impl<N: Marker> Node<N> {
             Inner::Drop(ref c) => Cmr::drop(c.cmr()),
             Inner::Comp(ref cl, ref cr) => Cmr::comp(cl.cmr(), cr.cmr()),
             Inner::Case(ref cl, ref cr) => Cmr::case(cl.cmr(), cr.cmr()),
-            Inner::AssertL(ref c, cmr) => Cmr::case(c.cmr(), cmr),
-            Inner::AssertR(cmr, ref c) => Cmr::case(cmr, c.cmr()),
+            Inner::AssertL(ref c, cmr) => Cmr::case(c.cmr(), *cmr),
+            Inner::AssertR(cmr, ref c) => Cmr::case(*cmr, c.cmr()),
             Inner::Pair(ref cl, ref cr) => Cmr::pair(cl.cmr(), cr.cmr()),
             Inner::Disconnect(ref cl, _) => Cmr::disconnect(cl.cmr()),
             Inner::Witness(_) => Cmr::witness(),
-            Inner::Fail(entropy) => Cmr::fail(entropy),
-            Inner::Jet(j) => Cmr::jet(j),
+            Inner::Fail(entropy) => Cmr::fail(*entropy),
+            Inner::Jet(j) => Cmr::jet(j.as_ref()),
             Inner::Word(ref w) => Cmr::const_word(w),
         };
 
@@ -654,7 +651,7 @@ impl<N: Marker> Node<N> {
     pub fn convert<S, M, C>(&self, converter: &mut C) -> Result<Arc<Node<M>>, C::Error>
     where
         S: for<'a> SharingTracker<&'a Self> + Default,
-        M: Marker<Jet = <N as Marker>::Jet>,
+        M: Marker,
         C: Converter<N, M>,
     {
         let mut converted: Vec<Arc<Node<M>>> = vec![];
@@ -665,27 +662,27 @@ impl<N: Marker> Node<N> {
             // Construct an Inner<usize> where pointers are replaced by indices.
             // Note that `map_left_right`'s internal logic will ensure that these
             // `unwrap`s are only called when they will succeed.
-            let indexed_inner: Inner<usize, N::Jet, &N::Disconnect, &N::Witness> = data
+            let indexed_inner: Inner<usize, &N::Disconnect, &N::Witness> = data
                 .node
                 .inner
                 .as_ref()
                 .map_left_right(|_| data.left_index.unwrap(), |_| data.right_index.unwrap());
 
             // Then, convert witness data, if this is a witness node.
-            let witness_inner: Inner<&usize, M::Jet, &&N::Disconnect, M::Witness> = indexed_inner
+            let witness_inner: Inner<&usize, &&N::Disconnect, M::Witness> = indexed_inner
                 .as_ref()
                 .map_witness_result(|wit| converter.convert_witness(&data, wit))?;
 
             // Then convert disconnect nodes data.
             let maybe_converted = data.right_index.map(|idx| &converted[idx]);
-            let witness_inner: Inner<&usize, N::Jet, M::Disconnect, M::Witness> = witness_inner
+            let witness_inner: Inner<&usize, M::Disconnect, M::Witness> = witness_inner
                 .map_disconnect_result(|disc| {
                     converter.convert_disconnect(&data, maybe_converted, disc)
                 })?;
 
             // Then put the converted nodes in place (it's easier to do this in this
             // order because of the way the reference types work out).
-            let converted_inner: Inner<Arc<Node<M>>, M::Jet, M::Disconnect, M::Witness> =
+            let converted_inner: Inner<Arc<Node<M>>, M::Disconnect, M::Witness> =
                 witness_inner.map(|idx| Arc::clone(&converted[*idx]));
 
             // Next, prune case nodes into asserts, if applicable
@@ -827,7 +824,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let prog = RedeemNode::<Elements>::decode(prog, witness).unwrap();
+        let prog = RedeemNode::decode::<_, _, Elements>(prog, witness).unwrap();
         assert_eq!(prog.cmr().to_byte_array(), test.cmr);
         assert_eq!(prog.amr().to_byte_array(), test.amr);
         assert_eq!(prog.ihr().to_byte_array(), test.ihr);

@@ -68,18 +68,18 @@ impl From<&'_ NoWitness> for WitnessOrHole {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Forest<J: Jet> {
-    roots: HashMap<Arc<str>, Arc<NamedCommitNode<J>>>,
+pub struct Forest {
+    roots: HashMap<Arc<str>, Arc<NamedCommitNode>>,
 }
 
-impl<J: Jet> Forest<J> {
+impl Forest {
     /// Parses a forest from a string
-    pub fn parse(s: &str) -> Result<Self, ErrorSet> {
-        parse::parse(s).map(|roots| Forest { roots })
+    pub fn parse<J: Jet>(s: &str) -> Result<Self, ErrorSet> {
+        parse::parse::<J>(s).map(|roots| Forest { roots })
     }
 
     /// Parses a program from a bytestring
-    pub fn from_program(root: Arc<CommitNode<J>>) -> Self {
+    pub fn from_program(root: Arc<CommitNode>) -> Self {
         let root = NamedCommitNode::from_node(&root);
         let mut roots = HashMap::new();
         roots.insert("main".into(), root);
@@ -87,7 +87,7 @@ impl<J: Jet> Forest<J> {
     }
 
     /// Accessor for the map of roots of this forest
-    pub fn roots(&self) -> &HashMap<Arc<str>, Arc<NamedCommitNode<J>>> {
+    pub fn roots(&self) -> &HashMap<Arc<str>, Arc<NamedCommitNode>> {
         &self.roots
     }
 
@@ -200,7 +200,7 @@ impl<J: Jet> Forest<J> {
         &self,
         inference_context: &types::Context<'brand>,
         witness: &HashMap<Arc<str>, Value>,
-    ) -> Option<Arc<ConstructNode<'brand, J>>> {
+    ) -> Option<Arc<ConstructNode<'brand>>> {
         let main = self.roots.get("main")?;
         Some(main.to_construct_node(inference_context, witness, self.roots()))
     }
@@ -221,7 +221,7 @@ mod tests {
         env: &JE,
     ) {
         types::Context::with_context(|ctx| {
-            let program = Forest::<JE::Jet>::parse(s)
+            let program = Forest::parse::<JE::Jet>(s)
                 .expect("Failed to parse human encoding")
                 .to_witness_node(&ctx, witness)
                 .expect("Forest is missing expected root")
@@ -239,7 +239,7 @@ mod tests {
         err_msg: &'static str,
     ) {
         types::Context::with_context(|ctx| {
-            let program = match Forest::<JE::Jet>::parse(s)
+            let program = match Forest::parse::<JE::Jet>(s)
                 .expect("Failed to parse human encoding")
                 .to_witness_node(&ctx, witness)
                 .expect("Forest is missing expected root")

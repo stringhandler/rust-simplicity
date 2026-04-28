@@ -113,7 +113,6 @@ impl Incomplete {
         use std::collections::HashSet;
 
         use super::context::OccursCheckId;
-        use super::BoundRef;
 
         /// Helper type for the occurs-check.
         enum OccursCheckStack<'brand> {

@@ -21,7 +21,7 @@ use std::{cmp, error, fmt};
 
 use super::bititer::{u2, DecodeNaturalError};
 
-type ArcNode<'brand, J> = Arc<ConstructNode<'brand, J>>;
+type ArcNode<'brand> = Arc<ConstructNode<'brand>>;
 
 /// Decoding error
 #[non_exhaustive]
@@ -104,7 +104,7 @@ impl error::Error for Error {
 }
 
 #[derive(Debug)]
-enum DecodeNode<J: Jet> {
+enum DecodeNode {
     Iden,
     Unit,
     InjL(usize),
@@ -119,14 +119,14 @@ enum DecodeNode<J: Jet> {
     Witness,
     Fail(FailEntropy),
     Hidden(Cmr),
-    Jet(J),
+    Jet(Box<dyn Jet>),
     Word(Word),
 }
 
-impl<J: Jet> DagLike for (usize, &'_ [DecodeNode<J>]) {
-    type Node = DecodeNode<J>;
+impl DagLike for (usize, &'_ [DecodeNode]) {
+    type Node = DecodeNode;
 
-    fn data(&self) -> &DecodeNode<J> {
+    fn data(&self) -> &DecodeNode {
         &self.1[self.0]
     }
 
@@ -156,14 +156,14 @@ impl<J: Jet> DagLike for (usize, &'_ [DecodeNode<J>]) {
 pub fn decode_expression<'brand, I: Iterator<Item = u8>, J: Jet>(
     ctx: &types::Context<'brand>,
     bits: &mut BitIter<I>,
-) -> Result<ArcNode<'brand, J>, Error> {
-    enum Converted<'brand, J: Jet> {
-        Node(ArcNode<'brand, J>),
+) -> Result<ArcNode<'brand>, Error> {
+    enum Converted<'brand> {
+        Node(ArcNode<'brand>),
         Hidden(Cmr),
     }
     use Converted::{Hidden, Node};
-    impl<'brand, J: Jet> Converted<'brand, J> {
-        fn get(&self) -> Result<&ArcNode<'brand, J>, Error> {
+    impl<'brand> Converted<'brand> {
+        fn get(&self) -> Result<&ArcNode<'brand>, Error> {
             match self {
                 Node(arc) => Ok(arc),
                 Hidden(_) => Err(Error::HiddenNode),
@@ -176,34 +176,34 @@ pub fn decode_expression<'brand, I: Iterator<Item = u8>, J: Jet>(
 
     let mut nodes = Vec::with_capacity(cmp::min(len, 10_000));
     for _ in 0..len {
-        let new_node = decode_node(bits, nodes.len())?;
+        let new_node = decode_node::<I, J>(bits, nodes.len())?;
         nodes.push(new_node);
     }
 
     // It is a sharing violation for any hidden node to be repeated. Track them in this set.
     let mut hidden_set = HashSet::<Cmr>::new();
     // Convert the DecodeNode structure into a CommitNode structure
-    let mut converted = Vec::<Converted<J>>::with_capacity(len);
+    let mut converted = Vec::<Converted>::with_capacity(len);
     for data in (nodes.len() - 1, &nodes[..]).post_order_iter::<InternalSharing>() {
         // Check canonical order as we go
         if data.index != data.node.0 {
             return Err(Error::NotInCanonicalOrder);
         }
 
-        let new = match nodes[data.node.0] {
+        let new = match &nodes[data.node.0] {
             DecodeNode::Unit => Node(ArcNode::unit(ctx)),
             DecodeNode::Iden => Node(ArcNode::iden(ctx)),
-            DecodeNode::InjL(i) => Node(ArcNode::injl(converted[i].get()?)),
-            DecodeNode::InjR(i) => Node(ArcNode::injr(converted[i].get()?)),
-            DecodeNode::Take(i) => Node(ArcNode::take(converted[i].get()?)),
-            DecodeNode::Drop(i) => Node(ArcNode::drop_(converted[i].get()?)),
+            DecodeNode::InjL(i) => Node(ArcNode::injl(converted[*i].get()?)),
+            DecodeNode::InjR(i) => Node(ArcNode::injr(converted[*i].get()?)),
+            DecodeNode::Take(i) => Node(ArcNode::take(converted[*i].get()?)),
+            DecodeNode::Drop(i) => Node(ArcNode::drop_(converted[*i].get()?)),
             DecodeNode::Comp(i, j) => {
-                Node(ArcNode::comp(converted[i].get()?, converted[j].get()?)?)
+                Node(ArcNode::comp(converted[*i].get()?, converted[*j].get()?)?)
             }
             DecodeNode::Case(i, j) => {
                 // Case is a special case, since it uniquely is allowed to have hidden
                 // children (but only one!) in which case it becomes an assertion.
-                match (&converted[i], &converted[j]) {
+                match (&converted[*i], &converted[*j]) {
                     (Node(left), Node(right)) => Node(ArcNode::case(left, right)?),
                     (Node(left), Hidden(cmr)) => Node(ArcNode::assertl(left, *cmr)?),
                     (Hidden(cmr), Node(right)) => Node(ArcNode::assertr(*cmr, right)?),
@@ -211,22 +211,22 @@ pub fn decode_expression<'brand, I: Iterator<Item = u8>, J: Jet>(
                 }
             }
             DecodeNode::Pair(i, j) => {
-                Node(ArcNode::pair(converted[i].get()?, converted[j].get()?)?)
+                Node(ArcNode::pair(converted[*i].get()?, converted[*j].get()?)?)
             }
-            DecodeNode::Disconnect1(i) => Node(ArcNode::disconnect(converted[i].get()?, &None)?),
+            DecodeNode::Disconnect1(i) => Node(ArcNode::disconnect(converted[*i].get()?, &None)?),
             DecodeNode::Disconnect(i, j) => Node(ArcNode::disconnect(
-                converted[i].get()?,
-                &Some(Arc::clone(converted[j].get()?)),
+                converted[*i].get()?,
+                &Some(Arc::clone(converted[*j].get()?)),
             )?),
             DecodeNode::Witness => Node(ArcNode::witness(ctx, None)),
-            DecodeNode::Fail(entropy) => Node(ArcNode::fail(ctx, entropy)),
+            DecodeNode::Fail(entropy) => Node(ArcNode::fail(ctx, *entropy)),
             DecodeNode::Hidden(cmr) => {
-                if !hidden_set.insert(cmr) {
+                if !hidden_set.insert(*cmr) {
                     return Err(Error::SharingNotMaximal);
                 }
-                Hidden(cmr)
+                Hidden(*cmr)
             }
-            DecodeNode::Jet(j) => Node(ArcNode::jet(ctx, j)),
+            DecodeNode::Jet(j) => Node(ArcNode::jet(ctx, j.as_ref())),
             DecodeNode::Word(ref w) => Node(ArcNode::const_word(ctx, w.shallow_clone())),
         };
         converted.push(new);
@@ -240,12 +240,12 @@ pub fn decode_expression<'brand, I: Iterator<Item = u8>, J: Jet>(
 fn decode_node<I: Iterator<Item = u8>, J: Jet>(
     bits: &mut BitIter<I>,
     index: usize,
-) -> Result<DecodeNode<J>, Error> {
+) -> Result<DecodeNode, Error> {
     // First bit: 1 for jets/words, 0 for normal combinators
     if bits.read_bit()? {
         // Second bit: 1 for jets, 0 for words
         if bits.read_bit()? {
-            J::decode(bits).map(|jet| DecodeNode::Jet(jet))
+            J::decode(bits).map(|jet| DecodeNode::Jet(Box::new(jet)))
         } else {
             let n = bits.read_natural(Some(32))?;
             let word = Word::from_bits(bits, n - 1)?;
@@ -321,10 +321,10 @@ mod tests {
         });
         // ...but NOT as a CommitNode
         let iter = BitIter::from(&justjet[..]);
-        CommitNode::<Core>::decode(iter).unwrap_err();
+        CommitNode::decode::<_, Core>(iter).unwrap_err();
         // ...or as a RedeemNode
         let iter = BitIter::from(&justjet[..]);
-        RedeemNode::<Core>::decode(iter, BitIter::from(&[][..])).unwrap_err();
+        RedeemNode::decode::<_, _, Core>(iter, BitIter::from(&[][..])).unwrap_err();
     }
 
     #[test]

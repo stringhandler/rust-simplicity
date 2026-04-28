@@ -49,8 +49,8 @@ impl Extractor<'_> {
         &mut self,
         ctx: &types::Context<'brand>,
         force_control: Option<ProgramControl>,
-    ) -> Option<Arc<ConstructNode<'brand, Core>>> {
-        type ArcNode<'brand> = Arc<ConstructNode<'brand, Core>>;
+    ) -> Option<Arc<ConstructNode<'brand>>> {
+        type ArcNode<'brand> = Arc<ConstructNode<'brand>>;
 
         let mut stack: Vec<ArcNode> = vec![];
 
@@ -165,7 +165,7 @@ impl Extractor<'_> {
                     _ => {
                         let extra_bits = usize::from(control >> 6);
                         let idx = (extra_bits << 8) + usize::from(self.extract_u8()?);
-                        stack.push(ArcNode::jet(ctx, Core::ALL[idx % Core::ALL.len()]));
+                        stack.push(ArcNode::jet(ctx, &Core::ALL[idx % Core::ALL.len()]));
                     }
                 }
             }

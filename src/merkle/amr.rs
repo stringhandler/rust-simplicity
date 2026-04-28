@@ -160,7 +160,7 @@ impl Amr {
     }
 
     /// Produce a CMR for a jet
-    pub fn jet<J: Jet>(jet: J) -> Self {
+    pub fn jet(jet: &dyn Jet) -> Self {
         Cmr::jet(jet).into()
     }
 
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn fixed_amr() {
         types::Context::with_context(|ctx| {
-            let node = Arc::<ConstructNode<_>>::jet(&ctx, Core::Verify)
+            let node = Arc::<ConstructNode>::jet(&ctx, &Core::Verify)
                 .finalize_types_non_program()
                 .unwrap();
             // Checked against C implementation

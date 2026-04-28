@@ -93,9 +93,7 @@ impl LimitError {
     }
 
     /// Helper function to check every value and sum for being within bounds.
-    pub(super) fn check_program<J: crate::jet::Jet>(
-        program: &crate::RedeemNode<J>,
-    ) -> Result<(), Self> {
+    pub(super) fn check_program(program: &crate::RedeemNode) -> Result<(), Self> {
         let source_ty_width = program.arrow().source.bit_width();
         let target_ty_width = program.arrow().target.bit_width();
         let bounds = program.bounds();
