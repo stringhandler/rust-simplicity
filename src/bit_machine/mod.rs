@@ -47,7 +47,7 @@ pub struct BitMachine {
 
 impl BitMachine {
     /// Construct a Bit Machine with enough space to execute the given program.
-    pub fn for_program<J: Jet>(program: &RedeemNode<J>) -> Result<Self, LimitError> {
+    pub fn for_program(program: &RedeemNode) -> Result<Self, LimitError> {
         LimitError::check_program(program)?;
         let io_width = program.arrow().source.bit_width() + program.arrow().target.bit_width();
 
@@ -62,7 +62,7 @@ impl BitMachine {
 
     #[cfg(test)]
     pub fn test_exec<JE: JetEnvironment>(
-        program: Arc<crate::node::ConstructNode<JE::Jet>>,
+        program: Arc<crate::node::ConstructNode>,
         env: &JE,
     ) -> Result<Value, ExecutionError> {
         use crate::node::SimpleFinalizer;
@@ -223,7 +223,7 @@ impl BitMachine {
     /// The Bit Machine is constructed via [`Self::for_program()`] to ensure enough space.
     pub fn exec<JE: JetEnvironment>(
         &mut self,
-        program: &RedeemNode<JE::Jet>,
+        program: &RedeemNode,
         env: &JE,
     ) -> Result<Value, ExecutionError> {
         self.exec_with_tracker(program, env, &mut NoTracker)
@@ -237,14 +237,14 @@ impl BitMachine {
     ///  ## Precondition
     ///
     /// The Bit Machine is constructed via [`Self::for_program()`] to ensure enough space.
-    pub fn exec_with_tracker<JE: JetEnvironment, T: ExecTracker<JE::Jet>>(
+    pub fn exec_with_tracker<JE: JetEnvironment, T: ExecTracker>(
         &mut self,
-        program: &RedeemNode<JE::Jet>,
+        program: &RedeemNode,
         env: &JE,
         tracker: &mut T,
     ) -> Result<Value, ExecutionError> {
-        enum CallStack<'a, JE: JetEnvironment> {
-            Goto(&'a RedeemNode<JE::Jet>),
+        enum CallStack<'a> {
+            Goto(&'a RedeemNode),
             MoveWriteFrameToRead,
             DropReadFrame,
             CopyFwd(usize),
@@ -252,7 +252,7 @@ impl BitMachine {
         }
 
         // Not used, but useful for debugging, so keep it around
-        impl<JE: JetEnvironment> fmt::Debug for CallStack<'_, JE> {
+        impl fmt::Debug for CallStack<'_> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 match self {
                     CallStack::Goto(ins) => write!(f, "goto {}", ins.inner()),
@@ -269,7 +269,7 @@ impl BitMachine {
         }
 
         let mut ip = program;
-        let mut call_stack: Vec<CallStack<'_, JE>> = vec![];
+        let mut call_stack: Vec<CallStack<'_>> = vec![];
 
         let output_width = ip.arrow().target.bit_width();
         if output_width > 0 {
@@ -370,7 +370,12 @@ impl BitMachine {
                 }
                 node::Inner::Witness(value) => self.write_value(value),
                 node::Inner::Jet(jet) => {
-                    jet_result = self.exec_jet(*jet, env);
+                    let typed_jet = jet
+                        .as_ref()
+                        .as_any()
+                        .downcast_ref::<JE::Jet>()
+                        .ok_or(ExecutionError::JetTypeMismatch)?;
+                    jet_result = self.exec_jet(typed_jet, env);
                 }
                 node::Inner::Word(value) => self.write_value(value.as_value()),
                 node::Inner::Fail(entropy) => {
@@ -436,7 +441,7 @@ impl BitMachine {
         }
     }
 
-    fn exec_jet<JE: JetEnvironment>(&mut self, jet: JE::Jet, env: &JE) -> Result<(), JetFailed> {
+    fn exec_jet<JE: JetEnvironment>(&mut self, jet: &JE::Jet, env: &JE) -> Result<(), JetFailed> {
         use crate::ffi::c_jets::frame_ffi::{c_readBit, c_writeBit, CFrameItem};
         use crate::ffi::c_jets::uword_width;
         use crate::ffi::ffi::UWORD;
@@ -525,7 +530,7 @@ impl BitMachine {
         let (input_read_frame, _input_buffer) = unsafe { get_input_frame(self, input_width) };
         let (mut output_write_frame, output_buffer) = unsafe { get_output_frame(output_width) };
 
-        let jet_fn = JE::c_jet_ptr(&jet);
+        let jet_fn = JE::c_jet_ptr(jet);
         let c_env = env.c_jet_env();
         let success = jet_fn(&mut output_write_frame, input_read_frame, c_env);
 
@@ -551,6 +556,8 @@ pub enum ExecutionError {
     LimitExceeded(LimitError),
     /// Jet failed during execution
     JetFailed(JetFailed),
+    /// Jet type mismatch between program and execution environment
+    JetTypeMismatch,
 }
 
 impl fmt::Display for ExecutionError {
@@ -567,6 +574,9 @@ impl fmt::Display for ExecutionError {
             }
             ExecutionError::LimitExceeded(e) => e.fmt(f),
             ExecutionError::JetFailed(jet_failed) => jet_failed.fmt(f),
+            ExecutionError::JetTypeMismatch => {
+                f.write_str("Jet type mismatch between program and execution environment")
+            }
         }
     }
 }
@@ -576,7 +586,8 @@ impl error::Error for ExecutionError {
         match self {
             Self::InputWrongType(..)
             | Self::ReachedFailNode(..)
-            | Self::ReachedPrunedBranch(..) => None,
+            | Self::ReachedPrunedBranch(..)
+            | Self::JetTypeMismatch => None,
             Self::LimitExceeded(ref e) => Some(e),
             Self::JetFailed(ref e) => Some(e),
         }
@@ -599,9 +610,9 @@ impl From<JetFailed> for ExecutionError {
 mod tests {
     use super::*;
 
-    use crate::jet::CoreEnv;
     #[cfg(feature = "elements")]
-    use crate::jet::{elements::ElementsEnv, Elements};
+    use crate::jet::elements::ElementsEnv;
+    use crate::jet::CoreEnv;
     #[cfg(feature = "elements")]
     use crate::{node::RedeemNode, BitIter};
     #[cfg(feature = "elements")]
@@ -619,7 +630,7 @@ mod tests {
 
         let prog = BitIter::from(prog_bytes);
         let witness = BitIter::from(witness_bytes);
-        let prog = match RedeemNode::<Elements>::decode(prog, witness) {
+        let prog = match RedeemNode::decode::<_, _, crate::jet::Elements>(prog, witness) {
             Ok(prog) => prog,
             Err(e) => panic!("program {} failed: {}", prog_hex, e),
         };
@@ -689,12 +700,12 @@ mod tests {
     fn crash_regression2() {
         use crate::node::{CoreConstructible as _, JetConstructible as _};
 
-        type Node<'brand> = Arc<crate::ConstructNode<'brand, crate::jet::Core>>;
+        type Node<'brand> = Arc<crate::ConstructNode<'brand>>;
 
         crate::types::Context::with_context(|ctx| {
             let mut bomb = Node::jet(
                 &ctx,
-                crate::jet::Core::Ch8, // arbitrary jet with nonzero output size
+                &crate::jet::Core::Ch8, // arbitrary jet with nonzero output size
             );
             for _ in 0..100 {
                 bomb = Node::pair(&bomb, &bomb).unwrap();

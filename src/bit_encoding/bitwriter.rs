@@ -115,7 +115,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::jet::Core;
     use crate::node::CoreConstructible;
     use crate::types;
     use crate::ConstructNode;
@@ -124,7 +123,7 @@ mod tests {
     #[test]
     fn vec() {
         types::Context::with_context(|ctx| {
-            let program = Arc::<ConstructNode<Core>>::unit(&ctx);
+            let program = Arc::<ConstructNode>::unit(&ctx);
             let _ = write_to_vec(|w| program.encode_without_witness(w));
         })
     }

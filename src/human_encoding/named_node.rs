@@ -4,7 +4,6 @@
 
 use crate::dag::{InternalSharing, MaxSharing, PostOrderIterItem};
 use crate::human_encoding::{Error, ErrorSet, Position, WitnessOrHole};
-use crate::jet::Jet;
 use crate::node::{
     self, Commit, CommitData, CommitNode, Construct, ConstructData, Constructible as _, Converter,
     CoreConstructible as _, Inner, NoDisconnect, NoWitness, Node,
@@ -19,7 +18,7 @@ use std::io;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-pub type NamedCommitNode<J> = Node<Named<Commit<J>>>;
+pub type NamedCommitNode = Node<Named<Commit>>;
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct Named<N> {
@@ -29,30 +28,29 @@ pub struct Named<N> {
     phantom: std::marker::PhantomData<N>,
 }
 
-impl<J: Jet> node::Marker for Named<Commit<J>> {
-    type CachedData = NamedCommitData<J>;
-    type Witness = <Commit<J> as node::Marker>::Witness;
+impl node::Marker for Named<Commit> {
+    type CachedData = NamedCommitData;
+    type Witness = <Commit as node::Marker>::Witness;
     type Disconnect = Arc<str>;
-    type SharingId = <Commit<J> as node::Marker>::SharingId;
-    type Jet = J;
+    type SharingId = <Commit as node::Marker>::SharingId;
 
     fn compute_sharing_id(cmr: Cmr, cached_data: &Self::CachedData) -> Option<Self::SharingId> {
-        Commit::<J>::compute_sharing_id(cmr, &cached_data.internal)
+        Commit::compute_sharing_id(cmr, &cached_data.internal)
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct NamedCommitData<J> {
+pub struct NamedCommitData {
     /// Data related to the node itself
-    internal: Arc<CommitData<J>>,
+    internal: Arc<CommitData>,
     /// Name assigned to the node.
     name: Arc<str>,
 }
 
-impl<J: Jet> NamedCommitNode<J> {
-    pub fn from_node(root: &CommitNode<J>) -> Arc<Self> {
+impl NamedCommitNode {
+    pub fn from_node(root: &CommitNode) -> Arc<Self> {
         let mut namer = Namer::new_rooted(root.cmr());
-        root.convert::<MaxSharing<Commit<J>>, _, _>(&mut namer)
+        root.convert::<MaxSharing<Commit>, _, _>(&mut namer)
             .unwrap()
     }
 
@@ -72,14 +70,14 @@ impl<J: Jet> NamedCommitNode<J> {
     }
 
     /// Forget the names, yielding an ordinary [`CommitNode`].
-    pub fn to_commit_node(&self) -> Arc<CommitNode<J>> {
-        struct Forgetter<J>(PhantomData<J>);
+    pub fn to_commit_node(&self) -> Arc<CommitNode> {
+        struct Forgetter(PhantomData<()>);
 
-        impl<J: Jet> Converter<Named<Commit<J>>, Commit<J>> for Forgetter<J> {
+        impl Converter<Named<Commit>, Commit> for Forgetter {
             type Error = ();
             fn convert_witness(
                 &mut self,
-                _: &PostOrderIterItem<&NamedCommitNode<J>>,
+                _: &PostOrderIterItem<&NamedCommitNode>,
                 _: &NoWitness,
             ) -> Result<NoWitness, Self::Error> {
                 Ok(NoWitness)
@@ -87,8 +85,8 @@ impl<J: Jet> NamedCommitNode<J> {
 
             fn convert_disconnect(
                 &mut self,
-                _: &PostOrderIterItem<&NamedCommitNode<J>>,
-                _: Option<&Arc<CommitNode<J>>>,
+                _: &PostOrderIterItem<&NamedCommitNode>,
+                _: Option<&Arc<CommitNode>>,
                 _: &Arc<str>,
             ) -> Result<NoDisconnect, Self::Error> {
                 Ok(NoDisconnect)
@@ -96,9 +94,9 @@ impl<J: Jet> NamedCommitNode<J> {
 
             fn convert_data(
                 &mut self,
-                data: &PostOrderIterItem<&NamedCommitNode<J>>,
-                _: node::Inner<&Arc<CommitNode<J>>, J, &NoDisconnect, &NoWitness>,
-            ) -> Result<Arc<CommitData<J>>, Self::Error> {
+                data: &PostOrderIterItem<&NamedCommitNode>,
+                _: node::Inner<&Arc<CommitNode>, &NoDisconnect, &NoWitness>,
+            ) -> Result<Arc<CommitData>, Self::Error> {
                 Ok(Arc::clone(&data.node.cached_data().internal))
             }
         }
@@ -111,23 +109,20 @@ impl<J: Jet> NamedCommitNode<J> {
         &self,
         inference_context: &types::Context<'brand>,
         witness: &HashMap<Arc<str>, Value>,
-        disconnect: &HashMap<Arc<str>, Arc<NamedCommitNode<J>>>,
-    ) -> Arc<ConstructNode<'brand, J>> {
-        struct Populator<'a, 'brand, J: Jet> {
+        disconnect: &HashMap<Arc<str>, Arc<NamedCommitNode>>,
+    ) -> Arc<ConstructNode<'brand>> {
+        struct Populator<'a, 'brand> {
             witness_map: &'a HashMap<Arc<str>, Value>,
-            disconnect_map: &'a HashMap<Arc<str>, Arc<NamedCommitNode<J>>>,
+            disconnect_map: &'a HashMap<Arc<str>, Arc<NamedCommitNode>>,
             inference_context: &'a types::Context<'brand>,
-            phantom: PhantomData<J>,
         }
 
-        impl<'brand, J: Jet> Converter<Named<Commit<J>>, Construct<'brand, J>>
-            for Populator<'_, 'brand, J>
-        {
+        impl<'brand> Converter<Named<Commit>, Construct<'brand>> for Populator<'_, 'brand> {
             type Error = ();
 
             fn convert_witness(
                 &mut self,
-                data: &PostOrderIterItem<&Node<Named<Commit<J>>>>,
+                data: &PostOrderIterItem<&Node<Named<Commit>>>,
                 _: &NoWitness,
             ) -> Result<Option<Value>, Self::Error> {
                 let name = &data.node.cached_data().name;
@@ -141,10 +136,10 @@ impl<J: Jet> NamedCommitNode<J> {
 
             fn convert_disconnect(
                 &mut self,
-                data: &PostOrderIterItem<&Node<Named<Commit<J>>>>,
-                maybe_converted: Option<&Arc<Node<Construct<'brand, J>>>>,
+                data: &PostOrderIterItem<&Node<Named<Commit>>>,
+                maybe_converted: Option<&Arc<Node<Construct<'brand>>>>,
                 _: &Arc<str>,
-            ) -> Result<Option<Arc<Node<Construct<'brand, J>>>>, Self::Error> {
+            ) -> Result<Option<Arc<Node<Construct<'brand>>>>, Self::Error> {
                 if let Some(converted) = maybe_converted {
                     Ok(Some(converted.clone()))
                 } else {
@@ -172,14 +167,13 @@ impl<J: Jet> NamedCommitNode<J> {
 
             fn convert_data(
                 &mut self,
-                _: &PostOrderIterItem<&Node<Named<Commit<J>>>>,
+                _: &PostOrderIterItem<&Node<Named<Commit>>>,
                 inner: Inner<
-                    &Arc<Node<Construct<'brand, J>>>,
-                    J,
-                    &Option<Arc<ConstructNode<'brand, J>>>,
+                    &Arc<Node<Construct<'brand>>>,
+                    &Option<Arc<ConstructNode<'brand>>>,
                     &Option<Value>,
                 >,
-            ) -> Result<ConstructData<'brand, J>, Self::Error> {
+            ) -> Result<ConstructData<'brand>, Self::Error> {
                 let inner = inner
                     .map(|node| node.cached_data())
                     .map_witness(|maybe_value| maybe_value.clone());
@@ -192,7 +186,6 @@ impl<J: Jet> NamedCommitNode<J> {
             witness_map: witness,
             disconnect_map: disconnect,
             inference_context,
-            phantom: PhantomData,
         })
         .unwrap()
     }
@@ -217,24 +210,23 @@ impl<J: Jet> NamedCommitNode<J> {
     }
 }
 
-pub type NamedConstructNode<'brand, J> = Node<Named<Construct<'brand, J>>>;
+pub type NamedConstructNode<'brand> = Node<Named<Construct<'brand>>>;
 
-impl<'brand, J: Jet> node::Marker for Named<Construct<'brand, J>> {
-    type CachedData = NamedConstructData<'brand, J>;
+impl<'brand> node::Marker for Named<Construct<'brand>> {
+    type CachedData = NamedConstructData<'brand>;
     type Witness = WitnessOrHole;
-    type Disconnect = Arc<NamedConstructNode<'brand, J>>;
-    type SharingId = <Construct<'brand, J> as node::Marker>::SharingId;
-    type Jet = J;
+    type Disconnect = Arc<NamedConstructNode<'brand>>;
+    type SharingId = <Construct<'brand> as node::Marker>::SharingId;
 
     fn compute_sharing_id(cmr: Cmr, cached_data: &Self::CachedData) -> Option<Self::SharingId> {
-        Construct::<J>::compute_sharing_id(cmr, &cached_data.internal)
+        Construct::compute_sharing_id(cmr, &cached_data.internal)
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct NamedConstructData<'brand, J> {
+pub struct NamedConstructData<'brand> {
     /// Data related to the node itself
-    internal: ConstructData<'brand, J>,
+    internal: ConstructData<'brand>,
     /// Name assigned to the node
     name: Arc<str>,
     /// Position of the node, if it comes from source code.
@@ -247,7 +239,7 @@ pub struct NamedConstructData<'brand, J> {
     user_target_types: Arc<[types::Type<'brand>]>,
 }
 
-impl<'brand, J: Jet> NamedConstructNode<'brand, J> {
+impl<'brand> NamedConstructNode<'brand> {
     /// Construct a named construct node from parts.
     pub fn new(
         inference_context: &types::Context<'brand>,
@@ -255,7 +247,7 @@ impl<'brand, J: Jet> NamedConstructNode<'brand, J> {
         position: Position,
         user_source_types: Arc<[types::Type<'brand>]>,
         user_target_types: Arc<[types::Type<'brand>]>,
-        inner: node::Inner<Arc<Self>, J, Arc<Self>, WitnessOrHole>,
+        inner: node::Inner<Arc<Self>, Arc<Self>, WitnessOrHole>,
     ) -> Result<Self, types::Error> {
         let construct_data = ConstructData::from_inner(
             inference_context,
@@ -308,31 +300,27 @@ impl<'brand, J: Jet> NamedConstructNode<'brand, J> {
     }
 
     /// Finalizes the types of the underlying [`crate::ConstructNode`].
-    pub fn finalize_types_main(&self) -> Result<Arc<NamedCommitNode<J>>, ErrorSet> {
+    pub fn finalize_types_main(&self) -> Result<Arc<NamedCommitNode>, ErrorSet> {
         self.finalize_types_inner(true)
     }
 
     /// Finalizes the types of the underlying [`crate::ConstructNode`], without setting
     /// the root node's arrow to 1->1.
-    pub fn finalize_types_non_main(&self) -> Result<Arc<NamedCommitNode<J>>, ErrorSet> {
+    pub fn finalize_types_non_main(&self) -> Result<Arc<NamedCommitNode>, ErrorSet> {
         self.finalize_types_inner(false)
     }
 
-    pub fn finalize_types_inner(
-        &self,
-        for_main: bool,
-    ) -> Result<Arc<NamedCommitNode<J>>, ErrorSet> {
-        struct FinalizeTypes<J: Jet> {
+    pub fn finalize_types_inner(&self, for_main: bool) -> Result<Arc<NamedCommitNode>, ErrorSet> {
+        struct FinalizeTypes {
             for_main: bool,
             errors: ErrorSet,
             pending_hole_error: Option<(Position, Error)>,
-            phantom: PhantomData<J>,
         }
 
-        impl<'brand, J: Jet> Converter<Named<Construct<'brand, J>>, Named<Commit<J>>> for FinalizeTypes<J> {
+        impl<'brand> Converter<Named<Construct<'brand>>, Named<Commit>> for FinalizeTypes {
             type Error = ErrorSet;
 
-            fn visit_node(&mut self, data: &PostOrderIterItem<&NamedConstructNode<J>>) {
+            fn visit_node(&mut self, data: &PostOrderIterItem<&NamedConstructNode>) {
                 // If we encounter a typed hole, this is an error *except* when the typed
                 // hole is the right child of a disconnect combinator. Conveniently, this
                 // case is very easy to detect: it will always appear as a hole immediately
@@ -367,7 +355,7 @@ impl<'brand, J: Jet> NamedConstructNode<'brand, J> {
 
             fn convert_witness(
                 &mut self,
-                _: &PostOrderIterItem<&NamedConstructNode<J>>,
+                _: &PostOrderIterItem<&NamedConstructNode>,
                 _: &WitnessOrHole,
             ) -> Result<NoWitness, Self::Error> {
                 Ok(NoWitness)
@@ -375,9 +363,9 @@ impl<'brand, J: Jet> NamedConstructNode<'brand, J> {
 
             fn convert_disconnect(
                 &mut self,
-                data: &PostOrderIterItem<&NamedConstructNode<J>>,
-                _: Option<&Arc<NamedCommitNode<J>>>,
-                disc: &Arc<NamedConstructNode<J>>,
+                data: &PostOrderIterItem<&NamedConstructNode>,
+                _: Option<&Arc<NamedCommitNode>>,
+                disc: &Arc<NamedConstructNode>,
             ) -> Result<Arc<str>, Self::Error> {
                 match disc.inner() {
                     node::Inner::Witness(WitnessOrHole::TypedHole(hole_name)) => {
@@ -393,9 +381,9 @@ impl<'brand, J: Jet> NamedConstructNode<'brand, J> {
 
             fn convert_data(
                 &mut self,
-                data: &PostOrderIterItem<&NamedConstructNode<J>>,
-                inner: node::Inner<&Arc<NamedCommitNode<J>>, J, &Arc<str>, &NoWitness>,
-            ) -> Result<NamedCommitData<J>, Self::Error> {
+                data: &PostOrderIterItem<&NamedConstructNode>,
+                inner: node::Inner<&Arc<NamedCommitNode>, &Arc<str>, &NoWitness>,
+            ) -> Result<NamedCommitData, Self::Error> {
                 let converted_data = inner
                     .as_ref()
                     .map(|node| &node.cached_data().internal)
@@ -464,7 +452,6 @@ impl<'brand, J: Jet> NamedConstructNode<'brand, J> {
             for_main,
             errors: ErrorSet::default(),
             pending_hole_error: None,
-            phantom: PhantomData,
         };
 
         if for_main {
@@ -526,7 +513,7 @@ impl Namer {
     }
 
     /// Generate a fresh name for the given node.
-    pub fn assign_name<C, J, X>(&mut self, inner: node::Inner<C, J, X, &WitnessOrHole>) -> String {
+    pub fn assign_name<C, X>(&mut self, inner: node::Inner<C, X, &WitnessOrHole>) -> String {
         let prefix = match inner {
             node::Inner::Iden => "id",
             node::Inner::Unit => "ut",
@@ -558,11 +545,11 @@ impl Namer {
     }
 }
 
-impl<J: Jet> Converter<Commit<J>, Named<Commit<J>>> for Namer {
+impl Converter<Commit, Named<Commit>> for Namer {
     type Error = ();
     fn convert_witness(
         &mut self,
-        _: &PostOrderIterItem<&CommitNode<J>>,
+        _: &PostOrderIterItem<&CommitNode>,
         _: &NoWitness,
     ) -> Result<NoWitness, Self::Error> {
         Ok(NoWitness)
@@ -570,8 +557,8 @@ impl<J: Jet> Converter<Commit<J>, Named<Commit<J>>> for Namer {
 
     fn convert_disconnect(
         &mut self,
-        _: &PostOrderIterItem<&CommitNode<J>>,
-        _: Option<&Arc<NamedCommitNode<J>>>,
+        _: &PostOrderIterItem<&CommitNode>,
+        _: Option<&Arc<NamedCommitNode>>,
         _: &NoDisconnect,
     ) -> Result<Arc<str>, Self::Error> {
         let hole_idx = self.other_idx;
@@ -581,9 +568,9 @@ impl<J: Jet> Converter<Commit<J>, Named<Commit<J>>> for Namer {
 
     fn convert_data(
         &mut self,
-        data: &PostOrderIterItem<&CommitNode<J>>,
-        inner: node::Inner<&Arc<NamedCommitNode<J>>, J, &Arc<str>, &NoWitness>,
-    ) -> Result<NamedCommitData<J>, Self::Error> {
+        data: &PostOrderIterItem<&CommitNode>,
+        inner: node::Inner<&Arc<NamedCommitNode>, &Arc<str>, &NoWitness>,
+    ) -> Result<NamedCommitData, Self::Error> {
         // Special-case the root node, which is always called main.
         // The CMR of the root node, conveniently, is guaranteed to be
         // unique, so we can key on the CMR to figure out which node to do.

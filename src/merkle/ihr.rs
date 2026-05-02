@@ -118,7 +118,7 @@ impl Imr {
     }
 
     /// Produce a CMR for a jet
-    pub fn jet<J: Jet>(jet: J) -> Self {
+    pub fn jet(jet: &dyn Jet) -> Self {
         Cmr::jet(jet).into()
     }
 

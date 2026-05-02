@@ -9,7 +9,7 @@ fn do_test(data: &[u8]) {
 
     let prog_iter = BitIter::new(data.iter().cloned());
     let wit_iter = BitIter::new(core::iter::repeat(0));
-    if let Ok(program) = RedeemNode::<Core>::decode(prog_iter, wit_iter) {
+    if let Ok(program) = RedeemNode::decode::<_, _, Core>(prog_iter, wit_iter) {
         let mut prog_reser = Vec::<u8>::new();
         let mut wit_reser = Vec::<u8>::new();
 

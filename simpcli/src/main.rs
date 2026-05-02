@@ -75,9 +75,9 @@ impl Command {
     }
 }
 
-fn parse_file(name: &str) -> Result<Forest<DefaultJet>, String> {
+fn parse_file(name: &str) -> Result<Forest, String> {
     let s = fs::read_to_string(name).map_err(|e| format!("failed to read file {}: {}", name, e))?;
-    match Forest::parse(&s) {
+    match Forest::parse::<DefaultJet>(&s) {
         Ok(prog) => Ok(prog),
         Err(mut errs) => {
             errs.add_context(std::sync::Arc::from(s));
@@ -154,16 +154,16 @@ fn main() -> Result<(), String> {
             let v = simplicity::base64::Engine::decode(&STANDARD, first_arg.as_bytes())
                 .map_err(|e| format!("failed to parse base64: {}", e))?;
             let iter = BitIter::from(v.into_iter());
-            let commit =
-                CommitNode::decode(iter).map_err(|e| format!("failed to decode program: {}", e))?;
-            let prog = Forest::<DefaultJet>::from_program(commit);
+            let commit = CommitNode::decode::<_, DefaultJet>(iter)
+                .map_err(|e| format!("failed to decode program: {}", e))?;
+            let prog = Forest::from_program(commit);
             println!("{}", prog.string_serialize());
         }
         Command::Graph => {
             let v = simplicity::base64::Engine::decode(&STANDARD, first_arg.as_bytes())
                 .map_err(|e| format!("failed to parse base64: {}", e))?;
             let iter = BitIter::from(v.into_iter());
-            let commit = CommitNode::<DefaultJet>::decode(iter)
+            let commit = CommitNode::decode::<_, DefaultJet>(iter)
                 .map_err(|e| format!("failed to decode program: {}", e))?;
             println!("{}", commit.display_as_dot());
         }

@@ -12,9 +12,9 @@ fn do_test(data: &[u8]) {
         Err(_) => return,
     };
 
-    if let Ok(program) = Forest::<Elements>::parse(s) {
+    if let Ok(program) = Forest::parse::<Elements>(s) {
         let reserialize = program.string_serialize();
-        let round_trip = Forest::<Elements>::parse(&reserialize).unwrap();
+        let round_trip = Forest::parse::<Elements>(&reserialize).unwrap();
         assert_eq!(program, round_trip);
     }
 }

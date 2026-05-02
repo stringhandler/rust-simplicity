@@ -8,7 +8,6 @@
 //! to read it visually the way you can with Bitcoin Script.
 
 use crate::dag::{Dag, DagLike, PostOrderIterItem, SharingTracker};
-use crate::jet::Jet;
 use crate::node::{self, Disconnectable};
 use crate::{BitWriter, Cmr, Value};
 

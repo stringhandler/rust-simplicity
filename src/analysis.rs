@@ -370,7 +370,7 @@ impl NodeBounds {
     }
 
     /// Node bounds for an arbitrary jet node
-    pub fn jet<J: Jet>(jet: J) -> NodeBounds {
+    pub fn jet(jet: &dyn Jet) -> NodeBounds {
         NodeBounds {
             extra_cells: 0,
             extra_frames: 0,

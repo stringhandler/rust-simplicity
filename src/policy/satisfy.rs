@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: CC0-1.0
 
 use crate::analysis::Cost;
-use crate::jet::Elements;
 use crate::node::{ConstructNode, Hiding, RedeemNode};
 use crate::policy::ToXOnlyPubkey;
 use crate::types;
@@ -73,7 +72,7 @@ pub trait Satisfier<'brand, Pk: ToXOnlyPubkey> {
     ///
     /// If the assembly program fails to run for the current transaction environment,
     /// then implementations should return `None`.
-    fn lookup_asm_program(&self, _: Cmr) -> Option<Arc<ConstructNode<'brand, Elements>>> {
+    fn lookup_asm_program(&self, _: Cmr) -> Option<Arc<ConstructNode<'brand>>> {
         None
     }
 }
@@ -133,7 +132,7 @@ pub enum SatisfierError {
     AssemblyFailed(crate::bit_machine::ExecutionError),
 }
 
-type SatResult<'brand> = Hiding<'brand, Arc<ConstructNode<'brand, Elements>>>;
+type SatResult<'brand> = Hiding<'brand, Arc<ConstructNode<'brand>>>;
 
 fn ok_if(condition: bool, expr: SatResult) -> SatResult {
     match condition {
@@ -275,7 +274,7 @@ impl<Pk: ToXOnlyPubkey> Policy<Pk> {
         &self,
         satisfier: &S,
         env: &ElementsEnv<Arc<elements::Transaction>>,
-    ) -> Result<Arc<RedeemNode<Elements>>, SatisfierError> {
+    ) -> Result<Arc<RedeemNode>, SatisfierError> {
         let result = self.satisfy_internal(satisfier)?;
         match result.get_node() {
             Some(program) => program
@@ -294,6 +293,7 @@ mod tests {
     use crate::bit_encoding::BitCollector;
     use crate::dag::{DagLike, NoSharing};
     use crate::jet::elements::ElementsEnv;
+    use crate::jet::Elements;
     use crate::node::{CoreConstructible, JetConstructible, SimpleFinalizer, WitnessConstructible};
     use crate::policy::serialize;
     use crate::{BitMachine, FailEntropy, SimplicityKey};
@@ -307,7 +307,7 @@ mod tests {
         pub context: types::Context<'brand>,
         pub preimages: HashMap<Pk::Sha256, Preimage32>,
         pub signatures: HashMap<Pk, elements::SchnorrSig>,
-        pub assembly: HashMap<Cmr, Arc<ConstructNode<'brand, Elements>>>,
+        pub assembly: HashMap<Cmr, Arc<ConstructNode<'brand>>>,
         pub tx: &'a elements::Transaction,
         pub index: usize,
     }
@@ -338,7 +338,7 @@ mod tests {
             Satisfier::<Pk>::check_after(&(&self.context, self.tx.lock_time), locktime)
         }
 
-        fn lookup_asm_program(&self, cmr: Cmr) -> Option<Arc<ConstructNode<'brand, Elements>>> {
+        fn lookup_asm_program(&self, cmr: Cmr) -> Option<Arc<ConstructNode<'brand>>> {
             self.assembly.get(&cmr).cloned()
         }
     }
@@ -383,23 +383,20 @@ mod tests {
         }
     }
 
-    fn execute_successful(
-        program: Arc<RedeemNode<Elements>>,
-        env: &ElementsEnv<Arc<elements::Transaction>>,
-    ) {
+    fn execute_successful(program: Arc<RedeemNode>, env: &ElementsEnv<Arc<elements::Transaction>>) {
         let mut mac = BitMachine::for_program(&program).unwrap();
         assert!(mac.exec(&program, env).is_ok());
     }
 
     fn execute_unsuccessful(
-        program: Arc<RedeemNode<Elements>>,
+        program: Arc<RedeemNode>,
         env: &ElementsEnv<Arc<elements::Transaction>>,
     ) {
         let mut mac = BitMachine::for_program(&program).unwrap();
         assert!(mac.exec(&program, env).is_err());
     }
 
-    fn to_witness(program: &RedeemNode<Elements>) -> Vec<&Value> {
+    fn to_witness(program: &RedeemNode) -> Vec<&Value> {
         program
             .post_order_iter::<NoSharing>()
             .into_witnesses()
@@ -739,12 +736,12 @@ mod tests {
             let mut assert_branch = |witness0: Value, witness1: Value| {
                 let ctx = &satisfier.context;
                 let asm_program = serialize::verify_bexp(
-                    &Arc::<ConstructNode<Elements>>::pair(
-                        &Arc::<ConstructNode<Elements>>::witness(ctx, Some(witness0.clone())),
-                        &Arc::<ConstructNode<Elements>>::witness(ctx, Some(witness1.clone())),
+                    &Arc::<ConstructNode>::pair(
+                        &Arc::<ConstructNode>::witness(ctx, Some(witness0.clone())),
+                        &Arc::<ConstructNode>::witness(ctx, Some(witness1.clone())),
                     )
                     .expect("sound types"),
-                    &Arc::<ConstructNode<Elements>>::jet(ctx, Elements::Eq8),
+                    &Arc::<ConstructNode>::jet(ctx, &Elements::Eq8),
                 );
                 let cmr = asm_program.cmr();
                 satisfier.assembly.insert(cmr, asm_program);
@@ -787,12 +784,12 @@ mod tests {
             let mut assert_branch = |witness0: Value, witness1: Value| {
                 let ctx = &satisfier.context;
                 let asm_program = serialize::verify_bexp(
-                    &Arc::<ConstructNode<Elements>>::pair(
-                        &Arc::<ConstructNode<Elements>>::witness(ctx, Some(witness0.clone())),
-                        &Arc::<ConstructNode<Elements>>::witness(ctx, Some(witness1.clone())),
+                    &Arc::<ConstructNode>::pair(
+                        &Arc::<ConstructNode>::witness(ctx, Some(witness0.clone())),
+                        &Arc::<ConstructNode>::witness(ctx, Some(witness1.clone())),
                     )
                     .expect("sound types"),
-                    &Arc::<ConstructNode<Elements>>::jet(ctx, Elements::Eq8),
+                    &Arc::<ConstructNode>::jet(ctx, &Elements::Eq8),
                 );
                 let cmr = asm_program.cmr();
                 satisfier.assembly.insert(cmr, asm_program);

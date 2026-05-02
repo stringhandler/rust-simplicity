@@ -4,6 +4,7 @@ use super::{Disconnectable, FailEntropy};
 use crate::dag::Dag;
 use crate::Cmr;
 
+use crate::jet::Jet;
 use crate::value::Word;
 use std::fmt;
 use std::sync::Arc;
@@ -12,8 +13,9 @@ use std::sync::Arc;
 ///
 /// This structure is used to indicate the type of a node and provide
 /// pointers or references to its children, if any.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub enum Inner<C, J, X, W> {
+#[derive(Clone, Eq, PartialOrd, Ord, Debug, Hash)]
+#[allow(clippy::derived_hash_with_manual_eq)] // see comment on manual `PartialEq` impl below
+pub enum Inner<C, X, W> {
     /// Identity
     Iden,
     /// Unit constant
@@ -43,14 +45,40 @@ pub enum Inner<C, J, X, W> {
     /// Universal fail
     Fail(FailEntropy),
     /// Application jet
-    Jet(J),
+    Jet(Box<dyn Jet>),
     /// Constant word
     Word(Word),
 }
 
-impl<C, J: Clone, X, W> Inner<C, J, X, W> {
+// Manually implemented because the 1.74 (MSRV) derive expands to a body that
+// moves out of the non-Copy `Box<dyn Jet>` field, later rustc versions are
+// fine.
+impl<C: PartialEq, X: PartialEq, W: PartialEq> PartialEq for Inner<C, X, W> {
+    fn eq(&self, other: &Self) -> bool {
+        use Inner::*;
+        match (self, other) {
+            (Iden, Iden) | (Unit, Unit) => true,
+            (InjL(a), InjL(b)) | (InjR(a), InjR(b)) | (Take(a), Take(b)) | (Drop(a), Drop(b)) => {
+                a == b
+            }
+            (Comp(a, b), Comp(c, d)) | (Case(a, b), Case(c, d)) | (Pair(a, b), Pair(c, d)) => {
+                a == c && b == d
+            }
+            (AssertL(a, b), AssertL(c, d)) => a == c && b == d,
+            (AssertR(a, b), AssertR(c, d)) => a == c && b == d,
+            (Disconnect(a, b), Disconnect(c, d)) => a == c && b == d,
+            (Witness(a), Witness(b)) => a == b,
+            (Fail(a), Fail(b)) => a == b,
+            (Jet(a), Jet(b)) => a == b,
+            (Word(a), Word(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl<C, X, W> Inner<C, X, W> {
     /// Convert a node's combinator data to a different type.
-    pub fn map<D, F: FnMut(C) -> D>(self, mut f: F) -> Inner<D, J, X, W> {
+    pub fn map<D, F: FnMut(C) -> D>(self, mut f: F) -> Inner<D, X, W> {
         match self {
             Inner::Iden => Inner::Iden,
             Inner::Unit => Inner::Unit,
@@ -75,7 +103,7 @@ impl<C, J: Clone, X, W> Inner<C, J, X, W> {
     pub fn map_result<D, E, F: FnMut(C) -> Result<D, E>>(
         self,
         mut f: F,
-    ) -> Result<Inner<D, J, X, W>, E> {
+    ) -> Result<Inner<D, X, W>, E> {
         Ok(match self {
             Inner::Iden => Inner::Iden,
             Inner::Unit => Inner::Unit,
@@ -102,7 +130,7 @@ impl<C, J: Clone, X, W> Inner<C, J, X, W> {
     /// Importantly, the child of an `AssertR` node is considered the left
     /// child, because as a DAG node, this is the sole (left) child, even
     /// though as a combinator, it is a right child.
-    pub fn map_left_right<D, FL, FR>(self, fl: FL, fr: FR) -> Inner<D, J, X, W>
+    pub fn map_left_right<D, FL, FR>(self, fl: FL, fr: FR) -> Inner<D, X, W>
     where
         FL: FnOnce(C) -> D,
         FR: FnOnce(C) -> D,
@@ -128,7 +156,7 @@ impl<C, J: Clone, X, W> Inner<C, J, X, W> {
     }
 
     /// Take references to all contained data.
-    pub fn as_ref(&self) -> Inner<&C, J, &X, &W> {
+    pub fn as_ref(&self) -> Inner<&C, &X, &W> {
         match self {
             Inner::Iden => Inner::Iden,
             Inner::Unit => Inner::Unit,
@@ -150,9 +178,8 @@ impl<C, J: Clone, X, W> Inner<C, J, X, W> {
     }
 
     /// Take references to only the disconnect node.
-    pub fn disconnect_as_ref(&self) -> Inner<C, J, &X, W>
+    pub fn disconnect_as_ref(&self) -> Inner<C, &X, W>
     where
-        J: Copy,
         C: Copy,
         W: Copy,
     {
@@ -171,12 +198,12 @@ impl<C, J: Clone, X, W> Inner<C, J, X, W> {
             Inner::Disconnect(cl, ref cr) => Inner::Disconnect(cl, cr),
             Inner::Witness(w) => Inner::Witness(w),
             Inner::Fail(entropy) => Inner::Fail(entropy),
-            Inner::Jet(j) => Inner::Jet(j),
+            Inner::Jet(ref j) => Inner::Jet(j.dyn_clone()),
             Inner::Word(ref w) => Inner::Word(w.shallow_clone()),
         }
     }
 
-    pub fn map_disconnect<Y, F: FnOnce(X) -> Y>(self, f: F) -> Inner<C, J, Y, W> {
+    pub fn map_disconnect<Y, F: FnOnce(X) -> Y>(self, f: F) -> Inner<C, Y, W> {
         match self {
             Inner::Iden => Inner::Iden,
             Inner::Unit => Inner::Unit,
@@ -201,7 +228,7 @@ impl<C, J: Clone, X, W> Inner<C, J, X, W> {
     pub fn map_disconnect_result<Y, E, F: FnOnce(X) -> Result<Y, E>>(
         self,
         f: F,
-    ) -> Result<Inner<C, J, Y, W>, E> {
+    ) -> Result<Inner<C, Y, W>, E> {
         Ok(match self {
             Inner::Iden => Inner::Iden,
             Inner::Unit => Inner::Unit,
@@ -223,7 +250,7 @@ impl<C, J: Clone, X, W> Inner<C, J, X, W> {
     }
 
     /// Convert a node's witness data to a different type.
-    pub fn map_witness<V, F: FnOnce(W) -> V>(self, f: F) -> Inner<C, J, X, V> {
+    pub fn map_witness<V, F: FnOnce(W) -> V>(self, f: F) -> Inner<C, X, V> {
         match self {
             Inner::Iden => Inner::Iden,
             Inner::Unit => Inner::Unit,
@@ -248,7 +275,7 @@ impl<C, J: Clone, X, W> Inner<C, J, X, W> {
     pub fn map_witness_result<V, E, F: FnOnce(W) -> Result<V, E>>(
         self,
         f: F,
-    ) -> Result<Inner<C, J, X, V>, E> {
+    ) -> Result<Inner<C, X, V>, E> {
         Ok(match self {
             Inner::Iden => Inner::Iden,
             Inner::Unit => Inner::Unit,
@@ -270,7 +297,7 @@ impl<C, J: Clone, X, W> Inner<C, J, X, W> {
     }
 }
 
-impl<C, J, X: Disconnectable<C>, W> Inner<Arc<C>, J, X, W> {
+impl<C, X: Disconnectable<C>, W> Inner<Arc<C>, X, W> {
     /// Collapse the node information to a `Dag`
     pub fn as_dag(&self) -> Dag<&C> {
         match self {
@@ -292,9 +319,9 @@ impl<C, J, X: Disconnectable<C>, W> Inner<Arc<C>, J, X, W> {
     }
 }
 
-impl<C, J, X, W> Inner<Option<C>, J, X, W> {
+impl<C, X, W> Inner<Option<C>, X, W> {
     /// Convert an `Inner<Option<C>, J, W>` to an `Option<Inner<C, J, W>>`.
-    pub fn transpose(self) -> Option<Inner<C, J, X, W>> {
+    pub fn transpose(self) -> Option<Inner<C, X, W>> {
         Some(match self {
             Inner::Iden => Inner::Iden,
             Inner::Unit => Inner::Unit,
@@ -316,9 +343,9 @@ impl<C, J, X, W> Inner<Option<C>, J, X, W> {
     }
 }
 
-impl<C, J, X, W> Inner<C, J, Option<X>, W> {
+impl<C, X, W> Inner<C, Option<X>, W> {
     /// Convert an `Inner<Option<C>, J, W>` to an `Option<Inner<C, J, W>>`.
-    pub fn transpose_disconnect(self) -> Option<Inner<C, J, X, W>> {
+    pub fn transpose_disconnect(self) -> Option<Inner<C, X, W>> {
         Some(match self {
             Inner::Iden => Inner::Iden,
             Inner::Unit => Inner::Unit,
@@ -340,9 +367,9 @@ impl<C, J, X, W> Inner<C, J, Option<X>, W> {
     }
 }
 
-impl<C, J, X, W> Inner<C, J, X, Option<W>> {
-    /// Convert an `Inner<C, J, Option<W>>` to an `Option<Inner<C, J, W>>`.
-    pub fn transpose_witness(self) -> Option<Inner<C, J, X, W>> {
+impl<C, X, W> Inner<C, X, Option<W>> {
+    /// Convert an `Inner<C, X, Option<W>>` to an `Option<Inner<C, X, W>>`.
+    pub fn transpose_witness(self) -> Option<Inner<C, X, W>> {
         Some(match self {
             Inner::Iden => Inner::Iden,
             Inner::Unit => Inner::Unit,
@@ -364,27 +391,27 @@ impl<C, J, X, W> Inner<C, J, X, Option<W>> {
     }
 }
 
-impl<C, J: Clone, X, W: Copy> Inner<C, J, X, &W> {
+impl<C, X, W: Copy> Inner<C, X, &W> {
     /// Copies witness data.
     ///
     /// Useful in conjunction with [`Inner::as_ref`] when you don't want to
     /// take a reference to witness data.
-    pub fn copy_witness(self) -> Inner<C, J, X, W> {
+    pub fn copy_witness(self) -> Inner<C, X, W> {
         self.map_witness(W::clone)
     }
 }
 
-impl<C, J: Clone, X: Copy, W> Inner<C, J, &X, W> {
+impl<C, X: Copy, W> Inner<C, &X, W> {
     /// Copies disconnect data.
     ///
     /// Useful in conjunction with [`Inner::as_ref`] when you don't want to
     /// take a reference to disconnect data.
-    pub fn copy_disconnect(self) -> Inner<C, J, X, W> {
+    pub fn copy_disconnect(self) -> Inner<C, X, W> {
         self.map_disconnect(X::clone)
     }
 }
 
-impl<C, J: fmt::Display, X, W> fmt::Display for Inner<C, J, X, W> {
+impl<C, X, W> fmt::Display for Inner<C, X, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Inner::Iden => f.write_str("iden"),

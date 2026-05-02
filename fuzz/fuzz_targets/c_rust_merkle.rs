@@ -36,7 +36,7 @@ fn do_test(data: &[u8]) {
 
     let prog_iter = BitIter::from(program);
     let wit_iter = BitIter::from(witness);
-    let rust_result = RedeemNode::<Elements>::decode(prog_iter, wit_iter);
+    let rust_result = RedeemNode::decode::<_, _, Elements>(prog_iter, wit_iter);
 
     match (c_result, rust_result) {
         (Ok(_), Err(e)) => panic!("C accepted code that Rust rejected: {}", e),

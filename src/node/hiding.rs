@@ -1,3 +1,4 @@
+use crate::jet::Jet;
 use crate::node::{
     CoreConstructible, DisconnectConstructible, JetConstructible, WitnessConstructible,
 };
@@ -216,11 +217,11 @@ impl<'brand, N: CoreConstructible<'brand> + HasCmr> CoreConstructible<'brand>
     }
 }
 
-impl<'brand, J, N> JetConstructible<'brand, J> for Hiding<'brand, N>
+impl<'brand, N> JetConstructible<'brand> for Hiding<'brand, N>
 where
-    N: JetConstructible<'brand, J> + CoreConstructible<'brand>,
+    N: JetConstructible<'brand> + CoreConstructible<'brand>,
 {
-    fn jet(inference_context: &Context<'brand>, jet: J) -> Self {
+    fn jet(inference_context: &Context<'brand>, jet: &dyn Jet) -> Self {
         N::jet(inference_context, jet).into()
     }
 }

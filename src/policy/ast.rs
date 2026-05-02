@@ -12,7 +12,6 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 use std::{fmt, iter, mem};
 
-use crate::jet::Elements;
 use crate::node::{ConstructNode, CoreConstructible, JetConstructible, WitnessConstructible};
 use crate::policy::serialize::{self, AssemblyConstructible};
 use crate::{types, Value};
@@ -63,7 +62,7 @@ impl<Pk: ToXOnlyPubkey> Policy<Pk> {
     ) -> Option<N>
     where
         N: CoreConstructible<'brand>
-            + JetConstructible<'brand, Elements>
+            + JetConstructible<'brand>
             + WitnessConstructible<'brand, Option<Value>>
             + AssemblyConstructible<'brand>,
     {
@@ -108,9 +107,9 @@ impl<Pk: ToXOnlyPubkey> Policy<Pk> {
     }
 
     /// Return the program commitment of the policy.
-    pub fn commit(&self) -> Option<Arc<CommitNode<Elements>>> {
+    pub fn commit(&self) -> Option<Arc<CommitNode>> {
         types::Context::with_context(|ctx| {
-            let construct: Arc<ConstructNode<Elements>> = self.serialize_no_witness(&ctx)?;
+            let construct: Arc<ConstructNode> = self.serialize_no_witness(&ctx)?;
             let commit = construct.finalize_types().expect("policy has sound types");
             Some(commit)
         })

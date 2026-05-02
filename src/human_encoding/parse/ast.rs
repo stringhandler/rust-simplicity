@@ -17,25 +17,25 @@ use crate::{BitIter, FailEntropy};
 ///
 /// A program is simply a list of such lines
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub struct Line<J> {
+pub struct Line {
     /// Position of the first character of the line.
     pub position: Position,
     /// The name of the expression being named on the line.
     pub name: Arc<str>,
     /// The actual expression, if present (missing for type declarations).
-    pub expression: Option<Expression<J>>,
+    pub expression: Option<Expression>,
     /// The type of the expression, if given (inferred if missing).
     pub arrow: (Option<Type>, Option<Type>),
 }
 
 /// An expression, as represented in the AST
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub struct Expression<J> {
-    pub inner: ExprInner<J>,
+pub struct Expression {
+    pub inner: ExprInner,
     pub position: Position,
 }
 
-impl<J: Jet> Expression<J> {
+impl Expression {
     fn reference(name: Arc<str>, position: Position) -> Self {
         Expression {
             inner: ExprInner::Reference(name),
@@ -46,21 +46,21 @@ impl<J: Jet> Expression<J> {
 
 /// An expression, as represented in the AST
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub enum ExprInner<J> {
+pub enum ExprInner {
     /// A reference to another expression
     Reference(Arc<str>),
     /// A left assertion (referring to the CMR of an expression on the right)
-    AssertL(Arc<Expression<J>>, AstCmr<J>),
+    AssertL(Arc<Expression>, AstCmr),
     /// A right assertion (referring to the CMR of an expression on the left)
-    AssertR(AstCmr<J>, Arc<Expression<J>>),
+    AssertR(AstCmr, Arc<Expression>),
     /// An inline expression
-    Inline(node::Inner<Arc<Expression<J>>, J, Arc<Expression<J>>, WitnessOrHole>),
+    Inline(node::Inner<Arc<Expression>, Arc<Expression>, WitnessOrHole>),
 }
 
 /// A CMR, as represented in the AST
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub enum AstCmr<J> {
-    Expr(Arc<Expression<J>>),
+pub enum AstCmr {
+    Expr(Arc<Expression>),
     Literal,
 }
 
@@ -339,23 +339,23 @@ impl Parser {
 }
 
 /// Takes a program as a string and parses it into an AST
-pub fn parse_line_vector<J: Jet + 'static>(input: &str) -> Result<Vec<Line<J>>, ErrorSet> {
+pub fn parse_line_vector<J: Jet + 'static>(input: &str) -> Result<Vec<Line>, ErrorSet> {
     let tokens = lex_all(input)?;
     let mut parser = Parser::new(tokens);
     let mut lines = Vec::new();
     while !parser.at_end() {
-        lines.push(parse_line(&mut parser)?);
+        lines.push(parse_line::<J>(&mut parser)?);
     }
     Ok(lines)
 }
 
 /// Parse a line
-fn parse_line<J: Jet + 'static>(p: &mut Parser) -> Result<Line<J>, ErrorSet> {
+fn parse_line<J: Jet + 'static>(p: &mut Parser) -> Result<Line, ErrorSet> {
     let (name, position) = parse_symbol_value(p)?;
 
     if p.eat(&Token::Assign) {
         // symbol ":=" expr  (optionally followed by ":" arrow)
-        let expr = parse_expr(p)?;
+        let expr = parse_expr::<J>(p)?;
         let arrow = if p.eat(&Token::Colon) {
             parse_arrow(p)?
         } else {
@@ -395,13 +395,13 @@ fn parse_arrow(p: &mut Parser) -> Result<(Option<Type>, Option<Type>), ErrorSet>
 }
 
 /// Parse an expression
-fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSet> {
+fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression, ErrorSet> {
     let position = p.current_position();
 
     match p.peek().cloned() {
         Some(Token::LParen) => {
             p.advance();
-            let inner = parse_expr(p)?;
+            let inner = parse_expr::<J>(p)?;
             p.expect(&Token::RParen)?;
             Ok(inner)
         }
@@ -431,8 +431,8 @@ fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSe
         }
         Some(Token::AssertL) => {
             p.advance();
-            let left = parse_expr(p)?;
-            let cmr = parse_cmr(p)?;
+            let left = parse_expr::<J>(p)?;
+            let cmr = parse_cmr::<J>(p)?;
             Ok(Expression {
                 inner: ExprInner::AssertL(Arc::new(left), cmr),
                 position,
@@ -440,8 +440,8 @@ fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSe
         }
         Some(Token::AssertR) => {
             p.advance();
-            let cmr = parse_cmr(p)?;
-            let right = parse_expr(p)?;
+            let cmr = parse_cmr::<J>(p)?;
+            let right = parse_expr::<J>(p)?;
             Ok(Expression {
                 inner: ExprInner::AssertR(cmr, Arc::new(right)),
                 position,
@@ -499,14 +499,14 @@ fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSe
                 return Err(ErrorSet::single(position, Error::UnknownJet(jet_name)));
             };
             Ok(Expression {
-                inner: ExprInner::Inline(node::Inner::Jet(jet)),
+                inner: ExprInner::Inline(node::Inner::Jet(Box::new(jet))),
                 position,
             })
         }
         // Unary
         Some(Token::InjL) => {
             p.advance();
-            let child = Arc::new(parse_expr(p)?);
+            let child = Arc::new(parse_expr::<J>(p)?);
             Ok(Expression {
                 inner: ExprInner::Inline(node::Inner::InjL(child)),
                 position,
@@ -514,7 +514,7 @@ fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSe
         }
         Some(Token::InjR) => {
             p.advance();
-            let child = Arc::new(parse_expr(p)?);
+            let child = Arc::new(parse_expr::<J>(p)?);
             Ok(Expression {
                 inner: ExprInner::Inline(node::Inner::InjR(child)),
                 position,
@@ -522,7 +522,7 @@ fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSe
         }
         Some(Token::Take) => {
             p.advance();
-            let child = Arc::new(parse_expr(p)?);
+            let child = Arc::new(parse_expr::<J>(p)?);
             Ok(Expression {
                 inner: ExprInner::Inline(node::Inner::Take(child)),
                 position,
@@ -530,7 +530,7 @@ fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSe
         }
         Some(Token::Drop) => {
             p.advance();
-            let child = Arc::new(parse_expr(p)?);
+            let child = Arc::new(parse_expr::<J>(p)?);
             Ok(Expression {
                 inner: ExprInner::Inline(node::Inner::Drop(child)),
                 position,
@@ -539,8 +539,8 @@ fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSe
         // Binary
         Some(Token::Case) => {
             p.advance();
-            let left = Arc::new(parse_expr(p)?);
-            let right = Arc::new(parse_expr(p)?);
+            let left = Arc::new(parse_expr::<J>(p)?);
+            let right = Arc::new(parse_expr::<J>(p)?);
             Ok(Expression {
                 inner: ExprInner::Inline(node::Inner::Case(left, right)),
                 position,
@@ -548,8 +548,8 @@ fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSe
         }
         Some(Token::Comp) => {
             p.advance();
-            let left = Arc::new(parse_expr(p)?);
-            let right = Arc::new(parse_expr(p)?);
+            let left = Arc::new(parse_expr::<J>(p)?);
+            let right = Arc::new(parse_expr::<J>(p)?);
             Ok(Expression {
                 inner: ExprInner::Inline(node::Inner::Comp(left, right)),
                 position,
@@ -557,8 +557,8 @@ fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSe
         }
         Some(Token::Pair) => {
             p.advance();
-            let left = Arc::new(parse_expr(p)?);
-            let right = Arc::new(parse_expr(p)?);
+            let left = Arc::new(parse_expr::<J>(p)?);
+            let right = Arc::new(parse_expr::<J>(p)?);
             Ok(Expression {
                 inner: ExprInner::Inline(node::Inner::Pair(left, right)),
                 position,
@@ -566,8 +566,8 @@ fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSe
         }
         Some(Token::Disconnect) => {
             p.advance();
-            let left = Arc::new(parse_expr(p)?);
-            let right = Arc::new(parse_expr(p)?);
+            let left = Arc::new(parse_expr::<J>(p)?);
+            let right = Arc::new(parse_expr::<J>(p)?);
             Ok(Expression {
                 inner: ExprInner::Inline(node::Inner::Disconnect(left, right)),
                 position,
@@ -586,9 +586,9 @@ fn parse_expr<J: Jet + 'static>(p: &mut Parser) -> Result<Expression<J>, ErrorSe
 }
 
 /// Parse a CMR (either an expression in #{} or a literal)
-fn parse_cmr<J: Jet + 'static>(p: &mut Parser) -> Result<AstCmr<J>, ErrorSet> {
+fn parse_cmr<J: Jet + 'static>(p: &mut Parser) -> Result<AstCmr, ErrorSet> {
     if p.eat(&Token::HashBrace) {
-        let expr = parse_expr(p)?;
+        let expr = parse_expr::<J>(p)?;
         p.expect(&Token::RBrace)?;
         return Ok(AstCmr::Expr(Arc::new(expr)));
     }

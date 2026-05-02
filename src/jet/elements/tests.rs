@@ -101,7 +101,7 @@ fn test_ffi_env() {
     );
 
     types::Context::with_context(|ctx| {
-        let prog = Arc::<ConstructNode<_>>::jet(&ctx, Elements::LockTime);
+        let prog = Arc::<ConstructNode>::jet(&ctx, &Elements::LockTime);
         assert_eq!(
             BitMachine::test_exec(prog, &env).expect("executing"),
             Value::u32(100),
