@@ -356,6 +356,8 @@ impl<'brand> DisconnectConstructible<'brand, Option<&Arrow<'brand>>> for Arrow<'
 
 impl<'brand> JetConstructible<'brand> for Arrow<'brand> {
     fn jet(inference_context: &Context<'brand>, jet: &dyn Jet) -> Self {
+        inference_context.check_jet(jet);
+
         Arrow {
             source: jet.source_ty().to_type(inference_context),
             target: jet.target_ty().to_type(inference_context),

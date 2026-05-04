@@ -415,6 +415,8 @@ impl fmt::Display for Type<'_> {
 mod tests {
     use super::*;
 
+    use crate::jet::Core;
+    use crate::node::JetConstructible;
     use crate::node::{ConstructNode, CoreConstructible};
 
     #[test]
@@ -444,6 +446,26 @@ mod tests {
             let case = Arc::<ConstructNode>::case(&iden, &drop).unwrap();
 
             let _ = format!("{:?}", case.arrow().source);
+        });
+    }
+
+    #[test]
+    fn check_jet_same_type_ok() {
+        Context::with_context(|ctx| {
+            let _ = Arc::<ConstructNode>::jet(&ctx, &Core::Add32);
+            let _ = Arc::<ConstructNode>::jet(&ctx, &Core::Subtract32);
+        });
+    }
+
+    #[cfg(feature = "elements")]
+    #[test]
+    #[should_panic(expected = "mixed jet types in context")]
+    fn check_jet_different_types_panics() {
+        use crate::jet::Elements;
+
+        Context::with_context(|ctx| {
+            let _ = Arc::<ConstructNode>::jet(&ctx, &Core::Add32);
+            let _ = Arc::<ConstructNode>::jet(&ctx, &Elements::Add32);
         });
     }
 }

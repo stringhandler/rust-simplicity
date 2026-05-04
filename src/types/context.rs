@@ -14,6 +14,7 @@
 //! the other.
 //!
 
+use std::any::TypeId;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -21,6 +22,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use ghost_cell::GhostToken;
 
 use crate::dag::{Dag, DagLike};
+use crate::jet::Jet;
 
 use super::{
     Bound, CompleteBound, Error, Final, Incomplete, Type, TypeInner, UbElement, WithGhostToken,
@@ -48,6 +50,8 @@ pub struct Context<'brand> {
 
 struct ContextInner<'brand> {
     slab: Vec<Bound<'brand>>,
+    /// Concrete jet type registered in this context, if any.
+    jet_type: Option<TypeId>,
 }
 
 impl fmt::Debug for Context<'_> {
@@ -81,7 +85,10 @@ impl<'brand> Context<'brand> {
         Context {
             inner: Arc::new(Mutex::new(WithGhostToken {
                 token,
-                inner: ContextInner { slab: vec![] },
+                inner: ContextInner {
+                    slab: vec![],
+                    jet_type: None,
+                },
             })),
         }
     }
@@ -145,6 +152,23 @@ impl<'brand> Context<'brand> {
         } else {
             Err(super::Error::InferenceContextMismatch)
         }
+    }
+
+    /// Asserts that all jets in this context have the same concrete type.
+    ///
+    /// Records the jet's type on first call, panics on subsequent calls with
+    /// a different concrete type.
+    pub fn check_jet(&self, jet: &dyn Jet) {
+        let new_id = jet.as_any().type_id();
+        let mut lock = self.lock();
+
+        if let Some(existing_id) = lock.inner.jet_type {
+            assert!(existing_id == new_id, "mixed jet types in context");
+
+            return;
+        }
+
+        lock.inner.jet_type = Some(new_id);
     }
 
     /// Accesses a bound.
