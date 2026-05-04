@@ -598,12 +598,70 @@ impl From<JetFailed> for ExecutionError {
 mod tests {
     use super::*;
 
+    use crate::jet::Core;
+    use crate::node::RedeemNode;
+
     #[cfg(feature = "elements")]
     use crate::jet::{elements::ElementsEnv, Elements};
     #[cfg(feature = "elements")]
-    use crate::{node::RedeemNode, BitIter};
+    use crate::BitIter;
     #[cfg(feature = "elements")]
     use hex::DisplayHex;
+
+    /// Records the combinator name of each node visited during execution, in pre-order.
+    #[derive(Default)]
+    struct OrderTracker(Vec<String>);
+
+    impl ExecTracker<Core> for OrderTracker {
+        fn visit_node(&mut self, node: &RedeemNode<Core>, _input: FrameIter, _output: NodeOutput) {
+            self.0.push(node.inner().to_string());
+        }
+    }
+
+    /// Parse a simplicity program string, run it on the bitmachine with an [`OrderTracker`],
+    /// and return the list of combinator names visited in execution (pre-)order.
+    ///
+    /// The string must contain a `main` root. Use human-encoding syntax, e.g.:
+    /// `"main := comp iden unit"` or `"main := pair (drop iden) iden : 1 * 1 -> 1 * (1 * 1)"`.
+    fn exec_order(s: &str) -> Vec<String> {
+        use crate::human_encoding::Forest;
+        use crate::types;
+        use std::collections::HashMap;
+
+        types::Context::with_context(|ctx| {
+            let program = Forest::<Core>::parse(s)
+                .expect("parse")
+                .to_witness_node(&ctx, &HashMap::new())
+                .expect("main root")
+                .finalize_pruned(&())
+                .expect("finalize");
+            let mut mac = BitMachine::for_program(&program).expect("for_program");
+            let mut tracker = OrderTracker::default();
+            mac.exec_with_tracker(&program, &(), &mut tracker)
+                .expect("exec");
+            tracker.0
+        })
+    }
+
+    /// Execution visits nodes in pre-order: parent before children.
+    /// Documented example from tracker.rs: comp, iden, unit.
+    #[test]
+    fn execution_order_comp_iden_unit() {
+        assert_eq!(
+            exec_order("main := comp iden unit"),
+            ["comp", "iden", "unit"],
+        );
+    }
+
+    /// pair(drop(iden), iden): pair first, then left subtree (drop → its child iden),
+    /// then right subtree (iden).
+    #[test]
+    fn execution_order_pair_drop_iden() {
+        assert_eq!(
+            exec_order("main := comp (pair (take (take iden)) unit) unit: ((1 * 1) * 1) -> 1"),
+            ["comp", "pair", "take", "take", "iden", "unit", "unit"],
+        );
+    }
 
     #[cfg(feature = "elements")]
     fn run_program_elements(
