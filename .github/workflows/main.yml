@@ -88,9 +88,10 @@ jobs:
         run: cp Cargo-recent.lock Cargo.lock
       - name: Running cargo test
         env:
-          FEATURES: bitcoin elements test-utils
+          FEATURES: base64 elements test-utils serde human_encoding
         run: |
           for f in $FEATURES; do echo "Features: $f" && cargo test --locked --no-default-features --features="$f"; done
+          echo "All features" && cargo test --locked --all-features
           cd simplicity-sys
           cargo test --locked --no-default-features
           cargo test --locked --features="test-utils"
