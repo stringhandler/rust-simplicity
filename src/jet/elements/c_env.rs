@@ -3,6 +3,7 @@
 //! High level APIs for creating C FFI compatible environment.
 //!
 
+use bitcoin::taproot::TAPROOT_ANNEX_PREFIX;
 use hashes::Hash;
 use std::os::raw::c_uchar;
 
@@ -33,7 +34,6 @@ struct RawOutputData {
 /// passed to the C FFI.
 #[derive(Debug)]
 struct RawInputData {
-    #[allow(dead_code)] // see FIXME below
     pub annex: Option<Vec<c_uchar>>,
     // pegin
     pub genesis_hash: Option<[c_uchar; 32]>,
@@ -73,10 +73,10 @@ fn new_raw_input<'raw>(
     inp: &'raw elements::TxIn,
     in_utxo: &'raw ElementsUtxo,
     inp_data: &'raw RawInputData,
+    annex: *const c_elements::CRawBuffer,
 ) -> c_elements::CRawInput<'raw> {
     c_elements::CRawInput {
-        // FIXME actually pass the annex in; see https://github.com/BlockstreamResearch/simplicity/issues/311 for some difficulty here.
-        annex: core::ptr::null(),
+        annex,
         prev_txid: inp.previous_output.txid.as_ref(),
         pegin: inp_data.genesis_hash.as_ref(),
         issuance: if inp.has_issuance() {
@@ -114,7 +114,7 @@ fn new_tx_data(tx: &elements::Transaction, in_utxos: &[ElementsUtxo]) -> RawTran
     };
     for (inp, in_utxo) in tx.input.iter().zip(in_utxos.iter()) {
         let inp_data = RawInputData {
-            annex: None, // Actually store annex
+            annex: get_annex(&inp.witness).map(|s| s.to_vec()),
             genesis_hash: inp
                 .pegin_data()
                 .map(|x| x.genesis_hash.to_raw_hash().to_byte_array()),
@@ -148,15 +148,28 @@ pub(super) fn new_tx(
 ) -> *mut c_elements::CTransaction {
     let mut raw_inputs = Vec::new();
     let mut raw_outputs = Vec::new();
+
+    // SAFETY: this allocation *must* live until after the `simplicity_mallocTransaction`
+    //  at the bottom of this function. We convert the vector to a boxed slice to ensure
+    //  it cannot be resized, which would potentially trigger a reallocation.
+    let mut raw_annexes = Vec::from_iter((0..tx.input.len()).map(|_| None)).into_boxed_slice();
+
     let txid = tx.txid();
     let tx_data = new_tx_data(tx, in_utxos);
-    for ((inp, in_utxo), inp_data) in tx
-        .input
-        .iter()
+    for (((raw_annex, inp), in_utxo), inp_data) in raw_annexes
+        .iter_mut()
+        .zip(tx.input.iter())
         .zip(in_utxos.iter())
         .zip(tx_data.inputs.iter())
     {
-        let res = new_raw_input(inp, in_utxo, inp_data);
+        *raw_annex = inp_data
+            .annex
+            .as_ref()
+            .map(|annex| c_elements::CRawBuffer::new(annex));
+        let annex_ptr = raw_annex
+            .as_ref()
+            .map_or(core::ptr::null(), |b| b as *const _);
+        let res = new_raw_input(inp, in_utxo, inp_data, annex_ptr);
         raw_inputs.push(res);
     }
     for (out, out_data) in tx.output.iter().zip(tx_data.outputs.iter()) {
@@ -172,10 +185,16 @@ pub(super) fn new_tx(
         version: tx.version,
         locktime: tx.lock_time.to_consensus_u32(),
     };
-    unsafe {
+    let ret = unsafe {
         // SAFETY: this is a FFI call and we constructed its argument correctly.
         c_elements::simplicity_mallocTransaction(&c_raw_tx)
-    }
+    };
+
+    // Explicitly drop raw_annexes so Rust doesn't try any funny business dropping it early.
+    // Drop raw_inputs first since it contains pointers into raw_annexes
+    drop(raw_inputs);
+    drop(raw_annexes);
+    ret
 }
 
 pub(super) fn new_tap_env(
@@ -255,4 +274,14 @@ fn serialize_surjection_proof(surjection_proof: &Option<Box<SurjectionProof>>) -
         .as_ref()
         .map(|x| x.serialize())
         .unwrap_or_default()
+}
+
+/// If the last item in the witness stack is an annex, return the data following the 0x50 byte.
+fn get_annex(in_witness: &elements::TxInWitness) -> Option<&[u8]> {
+    let last_item = in_witness.script_witness.last()?;
+    if *last_item.first()? == TAPROOT_ANNEX_PREFIX {
+        Some(&last_item[1..])
+    } else {
+        None
+    }
 }
