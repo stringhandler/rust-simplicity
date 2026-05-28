@@ -471,7 +471,7 @@ fn main() -> Result<(), String> {
                             Inner::Unit => "unit".to_owned(),
                             Inner::Witness(_) => "witness".to_owned(),
                             Inner::Fail(_) => "fail".to_owned(),
-                            Inner::Word(w) => format!("const({}b)", w.len()),
+                            Inner::Word(w) => format!("const({})", w),
                             Inner::Jet(j) => format!("{}", j),
                             _ => "?".to_owned(),
                         };
@@ -540,7 +540,7 @@ fn main() -> Result<(), String> {
                     Inner::Disconnect(_, _) => ("disconnect".to_owned(), false),
                     Inner::Witness(_) => ("witness".to_owned(), false),
                     Inner::Fail(_) => ("fail".to_owned(), true),
-                    Inner::Word(w) => (format!("const({}b)", w.len()), false),
+                    Inner::Word(w) => (format!("const({})", w), false),
                     Inner::Jet(j) => {
                         let sf = j.has_write_effect();
                         (format!("{}", j), sf)
