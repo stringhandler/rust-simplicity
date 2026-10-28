@@ -7,8 +7,10 @@ use simplicity::types::Final as FinalTy;
 use simplicity::{BitIter, Value};
 use std::sync::Arc;
 
+mod generator;
 mod program;
 
+pub use generator::{generate_program, pseudorandom_inputs};
 pub use program::ProgramControl;
 
 /// A wrapper around a buffer which has utilities for extracting various

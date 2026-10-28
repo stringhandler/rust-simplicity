@@ -23,6 +23,7 @@ c_rust_merkle,
 decode_natural,
 decode_program,
 parse_human,
+prune_generated,
 regression_286,
 regression_value,
         ]
