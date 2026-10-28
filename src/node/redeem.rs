@@ -13,7 +13,7 @@ use super::{
     Converter, Hide, Inner, Marker, NoDisconnect, NoWitness, Node,
 };
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -269,7 +269,8 @@ impl RedeemNode {
     /// Pruning works as follows:
     /// 1) Run the redeem program on the Bit Machine.
     /// 2) Mark all (un)used case branches using the IHR of the case node.
-    /// 3) Rebuild the program and omit unused branches.
+    /// 3) Rebuild the program from the nodes reachable through used branches,
+    ///    and omit unused branches.
     ///
     /// The pruning result depends on the witness data (which is already part of the redeem program)
     /// and on the transaction environment. These two inputs determine which case branches are
@@ -294,76 +295,44 @@ impl RedeemNode {
         env: &JE,
         tracker: &mut T,
     ) -> Result<Arc<RedeemNode>, ExecutionError> {
-        struct Pruner<'brand, 't, T> {
-            inference_context: types::Context<'brand>,
-            tracker: &'t mut T,
-        }
-
-        impl<'brand, 't, T> Converter<Redeem, Construct<'brand>> for Pruner<'brand, 't, T>
-        where
-            T: PruneTracker,
-        {
-            type Error = std::convert::Infallible;
-
-            fn convert_witness(
-                &mut self,
-                _: &PostOrderIterItem<&RedeemNode>,
-                witness: &Value,
-            ) -> Result<Option<Value>, Self::Error> {
-                // The pruned type is not finalized at this point,
-                // so we cannot prune the witness value.
-                Ok(Some(witness.shallow_clone()))
-            }
-
-            fn convert_disconnect(
-                &mut self,
-                _: &PostOrderIterItem<&RedeemNode>,
-                right: Option<&Arc<ConstructNode<'brand>>>,
-                _: &Arc<RedeemNode>,
-            ) -> Result<Option<Arc<ConstructNode<'brand>>>, Self::Error> {
-                debug_assert!(
-                    right.is_some(),
-                    "disconnected branch should exist in unpruned redeem program"
-                );
-                Ok(right.map(Arc::clone))
-            }
-
-            fn prune_case(
-                &mut self,
-                data: &PostOrderIterItem<&RedeemNode>,
-                _left: &Arc<ConstructNode>,
-                _right: &Arc<ConstructNode>,
-            ) -> Result<Hide, Self::Error> {
-                // The IHR of the pruned program may change,
-                // but the Converter trait gives us access to the unpruned node (`data`).
-                // The Bit Machine tracked (un)used case branches based on the unpruned IHR.
-                match (
-                    self.tracker.contains_left(data.node.ihr()),
-                    self.tracker.contains_right(data.node.ihr()),
-                ) {
-                    (true, true) => Ok(Hide::Neither),
-                    (false, true) => Ok(Hide::Left),
-                    (true, false) => Ok(Hide::Right),
-                    (false, false) => Ok(Hide::Neither), // case nodes that were never executed will be pruned out by their ancestors
+        /// Walks the program from the root, descending only into used branches,
+        /// and returns the IHRs of the nodes to keep together with which branches
+        /// to hide for each of them.
+        fn kept_nodes<T: PruneTracker>(root: &RedeemNode, tracker: &T) -> HashMap<Ihr, Hide> {
+            let mut kept = HashMap::new();
+            let mut stack = vec![root];
+            while let Some(node) = stack.pop() {
+                if kept.contains_key(&node.ihr()) {
+                    continue;
+                }
+                let hide = match node.inner() {
+                    Inner::Case(..) => match (
+                        tracker.contains_left(node.ihr()),
+                        tracker.contains_right(node.ihr()),
+                    ) {
+                        (true, true) => Hide::Neither,
+                        (false, true) => Hide::Left,
+                        (true, false) => Hide::Right,
+                        // This is not possible with the default tracker, but if a custom tracker 
+                        // is used with `prune_with_tracker`, we might end up here. It's difficult
+                        // to know the reason, so we take the cautious approach of not hiding any branch.
+                        // If you find yourself wanting to change this, you could add `Hide::Both`, but that
+                        // would add extra logic that is not tested in the default case.
+                        (false, false) => Hide::Neither,
+                    },
+                    _ => Hide::Neither,
+                };
+                kept.insert(node.ihr(), hide);
+                match (node.inner(), hide) {
+                    (Inner::Case(_, right), Hide::Left) => stack.push(right),
+                    (Inner::Case(left, _), Hide::Right) => stack.push(left),
+                    _ => {
+                        stack.extend(node.left_child());
+                        stack.extend(node.right_child());
+                    }
                 }
             }
-
-            fn convert_data(
-                &mut self,
-                _: &PostOrderIterItem<&RedeemNode>,
-                inner: Inner<
-                    &Arc<ConstructNode<'brand>>,
-                    &Option<Arc<ConstructNode<'brand>>>,
-                    &Option<Value>,
-                >,
-            ) -> Result<ConstructData<'brand>, Self::Error> {
-                let converted_inner = inner
-                    .map(|node| node.cached_data())
-                    .map_witness(Option::<Value>::clone);
-                let retyped = ConstructData::from_inner(&self.inference_context, converted_inner)
-                    .expect("pruned types should check out if unpruned types check out");
-                Ok(retyped)
-            }
+            kept
         }
 
         struct Finalizer;
@@ -425,21 +394,60 @@ impl RedeemNode {
         let mut mac = BitMachine::for_program(self)?;
         mac.exec_with_tracker(self, env, tracker)?;
 
-        // 2) Prune out unused case branches.
+        // 2) Find the nodes to keep: those reachable from the root through used branches.
+        let kept = kept_nodes(self, &*tracker);
+
+        // 3) Rebuild the program bottom-up from the kept nodes alone, and turn case
+        // nodes with an unused branch into assertions. Nodes in hidden branches are
+        // never built, so they cannot constrain the types of the pruned program.
         // Because the types of the pruned program may change,
         // we construct a temporary witness program with unfinalized types.
-        // Convert with `MaxSharing`: the tracker keys branch usage by IHR, so
-        // converting IHR-equal nodes separately makes each copy keep the branches
-        // that only its twins executed.
+        // Nodes are identified by IHR, like the tracker identifies them: building
+        // IHR-equal nodes separately makes each copy keep the branches that only its
+        // twins executed.
         types::Context::with_context(|inference_context| {
-            let pruned_witness_program = self
-                .convert::<MaxSharing<Redeem>, _, _>(&mut Pruner {
-                    inference_context,
-                    tracker,
-                })
-                .expect("pruning unused branches is infallible");
+            let mut built: HashMap<Ihr, Arc<ConstructNode>> = HashMap::new();
+            for data in self.post_order_iter::<MaxSharing<Redeem>>() {
+                let node = data.node;
+                let hide = match kept.get(&node.ihr()) {
+                    Some(&hide) => hide,
+                    // Inside a hidden branch.
+                    None => continue,
+                };
+                // Children are visited before their parents, so kept children are built.
+                let child = |child: &Arc<RedeemNode>| Arc::clone(&built[&child.ihr()]);
+                let inner = match (node.inner(), hide) {
+                    (Inner::Case(left, right), Hide::Left) => {
+                        Inner::AssertR(left.cmr(), child(right))
+                    }
+                    (Inner::Case(left, right), Hide::Right) => {
+                        Inner::AssertL(child(left), right.cmr())
+                    }
+                    (inner, _) => inner
+                        .as_ref()
+                        .map(&child)
+                        .map_disconnect(|right| Some(child(right)))
+                        // The pruned type is not finalized at this point,
+                        // so we cannot prune the witness value.
+                        .map_witness(|witness| Some(witness.shallow_clone())),
+                };
+                let data = ConstructData::from_inner(
+                    &inference_context,
+                    inner
+                        .as_ref()
+                        .map(|node| node.cached_data())
+                        .map_witness(Option::<Value>::clone),
+                )
+                .expect("pruned types should check out if unpruned types check out");
+                built.insert(node.ihr(), Arc::new(Node::from_parts(inner, data)));
+            }
+            let pruned_witness_program = built.remove(&self.ihr()).expect("root is kept");
+            // Like a decoder, fix the program type to 1 → 1.
+            pruned_witness_program
+                .set_arrow_to_program()
+                .expect("pruned program should have program type");
 
-            // 3) Finalize the types of the witness program.
+            // 4) Finalize the types of the witness program.
             // We obtain the pruned redeem program.
             // Once the pruned type is finalized, we can proceed to prune witness values.
             Ok(pruned_witness_program
@@ -1045,6 +1053,78 @@ mod tests {
             pruned.to_vec_with_witness(),
             "pruning was not idempotent, so the first pass left work undone"
         );
+    }
+
+    #[test]
+    #[cfg(feature = "human_encoding")]
+    fn prune_drops_witness_read_only_by_hidden_branch() {
+        // Only the right branch of the case reads `wit2`. With `wit1` selecting the
+        // left branch, pruning hides the right branch, nothing else reads `wit2`, and
+        // a decoder expects no bits for it. Both branches contain `drop iden`, so the
+        // hidden branch must not constrain the types of the pruned program through it.
+        use crate::ffi::tests::{ffi::SimplicityErr, run_program, TestUpTo};
+        use crate::human_encoding::Forest;
+        use crate::jet::CoreEnv;
+        use std::collections::HashMap;
+
+        // `drop iden` is defined once, so both branches point at the same node.
+        let pointer_shared = r#"wit1 := witness : 1 -> 2
+wit2 := witness : 1 -> 2^8
+input := pair wit1 wit2 : 1 -> 2 * 2^8
+proj := drop iden
+skip_wit2 := comp proj unit
+read_wit2 := comp proj (comp (pair iden iden) (comp jet_eq_8 jet_verify))
+main := comp input (case skip_wit2 read_wit2) : 1 -> 1"#;
+        // `drop iden` is written out twice: two pointer-distinct nodes with one IHR.
+        let ihr_shared = r#"wit1 := witness : 1 -> 2
+wit2 := witness : 1 -> 2^8
+input := pair wit1 wit2 : 1 -> 2 * 2^8
+skip_wit2 := comp (drop iden) unit
+read_wit2 := comp (drop iden) (comp (pair iden iden) (comp jet_eq_8 jet_verify))
+main := comp input (case skip_wit2 read_wit2) : 1 -> 1"#;
+        let wit = HashMap::from([
+            (Arc::from("wit1"), Value::u1(0)),
+            (Arc::from("wit2"), Value::u8(7)),
+        ]);
+
+        for s in [pointer_shared, ihr_shared] {
+            let unpruned = types::Context::with_context(|ctx| {
+                Forest::parse::<Core>(s)
+                    .expect("program should parse")
+                    .to_witness_node(&ctx, &wit)
+                    .expect("program should have main")
+                    .finalize_unpruned()
+                    .expect("program should finalize")
+            });
+
+            let pruned = unpruned
+                .prune(&CoreEnv::new())
+                .expect("pruning should succeed");
+            let (prog_bytes, witness_bytes) = pruned.to_vec_with_witness();
+            let decoded = RedeemNode::decode::<_, _, Core>(
+                BitIter::from(&prog_bytes[..]),
+                BitIter::from(&witness_bytes[..]),
+            )
+            .expect("pruned program should decode, so its witness holds no unread bits");
+            assert_eq!(
+                decoded.ihr(),
+                pruned.ihr(),
+                "a decoder should infer the same types as pruning did"
+            );
+
+            // libsimplicity is the consensus implementation; check that it accepts the
+            // pruned program. The jets are in the hidden branch, so it can decode the
+            // program although it expects Elements jet codes.
+            let c_result = run_program(
+                &prog_bytes,
+                &witness_bytes,
+                TestUpTo::Everything,
+                None,
+                None,
+            )
+            .expect("libsimplicity should decode the pruned program");
+            assert_eq!(c_result.eval_result, SimplicityErr::NoError);
+        }
     }
 
     #[test]
