@@ -1168,6 +1168,75 @@ mod tests {
     }
 
     #[test]
+    fn prune_keeps_branches_of_case_nodes_that_become_equal() {
+        // Two separate `case unit unit` nodes with different types, so the tracker
+        // tells them apart. One only takes its right branch and the other only its
+        // left. Pruning makes their types equal, and the IHR of a case node does not
+        // show which branch it hides, so an encoder gives both the same node, which
+        // must keep both branches. Human encoding cannot express this program,
+        // because it merges nodes with the same CMR.
+        use crate::ffi::tests::{ffi::SimplicityErr, run_program, TestUpTo};
+        use crate::jet::CoreEnv;
+        use crate::node::CoreConstructible;
+
+        type ArcNode<'brand> = Arc<ConstructNode<'brand>>;
+
+        let unpruned = types::Context::with_context(|ctx| {
+            let unit = || ArcNode::unit(&ctx);
+            // `case unit unit : 2 * 1 -> 1`, fed a right-tagged input.
+            let takes_right = ArcNode::comp(
+                &ArcNode::pair(&ArcNode::injr(&unit()), &unit()).unwrap(),
+                &ArcNode::case(&unit(), &unit()).unwrap(),
+            )
+            .unwrap();
+            // A left-tagged value of type 1 + 2. Its right branch never runs, but makes
+            // the right side 2 rather than 1 until pruning hides it.
+            let tag = ArcNode::comp(
+                &ArcNode::pair(&ArcNode::injl(&unit()), &unit()).unwrap(),
+                &ArcNode::case(
+                    &ArcNode::injl(&unit()),
+                    &ArcNode::injr(&ArcNode::injl(&unit())),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            // `case unit unit : (1 + 2) * 1 -> 1`, fed that left-tagged value.
+            let takes_left = ArcNode::comp(
+                &ArcNode::pair(&tag, &unit()).unwrap(),
+                &ArcNode::case(&unit(), &unit()).unwrap(),
+            )
+            .unwrap();
+            ArcNode::comp(&ArcNode::pair(&takes_right, &takes_left).unwrap(), &unit())
+                .unwrap()
+                .finalize_unpruned()
+                .expect("program should finalize")
+        });
+
+        let env = CoreEnv::new();
+        let pruned = unpruned.prune(&env).expect("pruning should succeed");
+        let (prog_bytes, witness_bytes) = pruned.to_vec_with_witness();
+        let decoded = RedeemNode::decode::<_, _, Core>(
+            BitIter::from(&prog_bytes[..]),
+            BitIter::from(&witness_bytes[..]),
+        )
+        .expect("pruned program should decode");
+        BitMachine::for_program(&decoded)
+            .expect("pruned program has reasonable bounds")
+            .exec(&decoded, &env)
+            .expect("decoded program should not reach a pruned branch");
+
+        let c_result = run_program(
+            &prog_bytes,
+            &witness_bytes,
+            TestUpTo::Everything,
+            None,
+            None,
+        )
+        .expect("libsimplicity should decode the pruned program");
+        assert_eq!(c_result.eval_result, SimplicityErr::NoError);
+    }
+
+    #[test]
     #[cfg(feature = "human_encoding")]
     fn prune_drops_witness_read_only_by_hidden_branch() {
         // Only the right branch of the case reads `wit2`. With `wit1` selecting the
