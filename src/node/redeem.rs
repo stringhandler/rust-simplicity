@@ -13,6 +13,7 @@ use super::{
     Converter, Hide, Inner, Marker, NoDisconnect, NoWitness, Node,
 };
 
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::marker::PhantomData;
@@ -271,6 +272,8 @@ impl RedeemNode {
     /// 2) Mark all (un)used case branches using the IHR of the case node.
     /// 3) Rebuild the program from the nodes reachable through used branches,
     ///    and omit unused branches.
+    /// 4) If case nodes with different IHRs became one node in the pruned program,
+    ///    let them share the branches that any of them used, and go back to step 3.
     ///
     /// The pruning result depends on the witness data (which is already part of the redeem program)
     /// and on the transaction environment. These two inputs determine which case branches are
@@ -280,7 +283,7 @@ impl RedeemNode {
     ///
     /// Pruning fails if the original, unpruned program fails to run on the Bit Machine (step 1).
     /// In this case, the witness data needs to be revised.
-    /// The other pruning steps (2 & 3) never fail.
+    /// The other pruning steps (2 to 4) never fail.
     pub fn prune<JE: JetEnvironment>(&self, env: &JE) -> Result<Arc<RedeemNode>, ExecutionError> {
         self.prune_with_tracker(env, &mut SetTracker::default())
     }
@@ -295,10 +298,70 @@ impl RedeemNode {
         env: &JE,
         tracker: &mut T,
     ) -> Result<Arc<RedeemNode>, ExecutionError> {
+        /// Which branches of each case node were used.
+        ///
+        /// Case nodes with different IHRs can become one node in the pruned program:
+        /// pruning makes their types smaller, and the IHR of a case node does not show
+        /// which branch it hides, if that branch holds no witness. Such case nodes are
+        /// merged here, and share the branches that any of them used.
+        struct Usage<'t, T> {
+            tracker: &'t T,
+            /// Case nodes which were merged into another, by IHR.
+            merged_into: HashMap<Ihr, Ihr>,
+            /// The used left and right branches of each group of merged case nodes.
+            branches: HashMap<Ihr, (bool, bool)>,
+        }
+
+        impl<T: PruneTracker> Usage<'_, T> {
+            fn root(&self, mut ihr: Ihr) -> Ihr {
+                while let Some(&next) = self.merged_into.get(&ihr) {
+                    ihr = next;
+                }
+                ihr
+            }
+
+            fn used(&mut self, ihr: Ihr) -> (bool, bool) {
+                let root = self.root(ihr);
+                let tracker = self.tracker;
+                *self
+                    .branches
+                    .entry(root)
+                    .or_insert_with(|| (tracker.contains_left(root), tracker.contains_right(root)))
+            }
+
+            fn hide(&mut self, ihr: Ihr) -> Hide {
+                match self.used(ihr) {
+                    (true, true) => Hide::Neither,
+                    (false, true) => Hide::Left,
+                    (true, false) => Hide::Right,
+                    // Not executed, which happens inside a branch that is kept for a
+                    // merged case node. Keep both branches.
+                    (false, false) => Hide::Neither,
+                }
+            }
+
+            /// Merges the groups of two case nodes, and returns whether this changed
+            /// the branches that either group uses.
+            fn merge(&mut self, a: Ihr, b: Ihr) -> bool {
+                let (used_a, used_b) = (self.used(a), self.used(b));
+                let (root_a, root_b) = (self.root(a), self.root(b));
+                if root_a == root_b {
+                    return false;
+                }
+                let used = (used_a.0 || used_b.0, used_a.1 || used_b.1);
+                self.merged_into.insert(root_a, root_b);
+                self.branches.insert(root_b, used);
+                used != used_a || used != used_b
+            }
+        }
+
         /// Walks the program from the root, descending only into used branches,
         /// and returns the IHRs of the nodes to keep together with which branches
         /// to hide for each of them.
-        fn kept_nodes<T: PruneTracker>(root: &RedeemNode, tracker: &T) -> HashMap<Ihr, Hide> {
+        fn kept_nodes<T: PruneTracker>(
+            root: &RedeemNode,
+            usage: &mut Usage<T>,
+        ) -> HashMap<Ihr, Hide> {
             let mut kept = HashMap::new();
             let mut stack = vec![root];
             while let Some(node) = stack.pop() {
@@ -306,20 +369,7 @@ impl RedeemNode {
                     continue;
                 }
                 let hide = match node.inner() {
-                    Inner::Case(..) => match (
-                        tracker.contains_left(node.ihr()),
-                        tracker.contains_right(node.ihr()),
-                    ) {
-                        (true, true) => Hide::Neither,
-                        (false, true) => Hide::Left,
-                        (true, false) => Hide::Right,
-                        // This is not possible with the default tracker, but if a custom tracker 
-                        // is used with `prune_with_tracker`, we might end up here. It's difficult
-                        // to know the reason, so we take the cautious approach of not hiding any branch.
-                        // If you find yourself wanting to change this, you could add `Hide::Both`, but that
-                        // would add extra logic that is not tested in the default case.
-                        (false, false) => Hide::Neither,
-                    },
+                    Inner::Case(..) => usage.hide(node.ihr()),
                     _ => Hide::Neither,
                 };
                 kept.insert(node.ihr(), hide);
@@ -335,14 +385,17 @@ impl RedeemNode {
             kept
         }
 
-        struct Finalizer;
+        /// Finalizes the types of the pruned program, and records the IHR of each node.
+        struct Finalizer<'brand> {
+            ihrs: HashMap<*const ConstructNode<'brand>, Ihr>,
+        }
 
-        impl<'brand> Converter<Construct<'brand>, Redeem> for Finalizer {
+        impl<'brand> Converter<Construct<'brand>, Redeem> for Finalizer<'brand> {
             type Error = std::convert::Infallible;
 
             fn convert_witness(
                 &mut self,
-                data: &PostOrderIterItem<&ConstructNode>,
+                data: &PostOrderIterItem<&ConstructNode<'brand>>,
                 witness: &Option<Value>,
             ) -> Result<Value, Self::Error> {
                 let pruned_target_ty = data
@@ -361,9 +414,9 @@ impl RedeemNode {
 
             fn convert_disconnect(
                 &mut self,
-                _: &PostOrderIterItem<&ConstructNode>,
+                _: &PostOrderIterItem<&ConstructNode<'brand>>,
                 right: Option<&Arc<RedeemNode>>,
-                _: &Option<Arc<ConstructNode>>,
+                _: &Option<Arc<ConstructNode<'brand>>>,
             ) -> Result<Arc<RedeemNode>, Self::Error> {
                 Ok(right
                     .map(Arc::clone)
@@ -372,7 +425,7 @@ impl RedeemNode {
 
             fn convert_data(
                 &mut self,
-                data: &PostOrderIterItem<&ConstructNode>,
+                data: &PostOrderIterItem<&ConstructNode<'brand>>,
                 inner: Inner<&Arc<RedeemNode>, &Arc<RedeemNode>, &Value>,
             ) -> Result<Arc<RedeemData>, Self::Error> {
                 // Finalize target types of witness nodes in advance so we can prune their values.
@@ -385,8 +438,88 @@ impl RedeemNode {
                     .map(|node| node.cached_data())
                     .map_disconnect(|node| node.cached_data())
                     .map_witness(Value::shallow_clone);
-                Ok(Arc::new(RedeemData::new(final_arrow, converted_inner)))
+                let redeem_data = Arc::new(RedeemData::new(final_arrow, converted_inner));
+                self.ihrs.insert(data.node, redeem_data.ihr);
+                Ok(redeem_data)
             }
+        }
+
+        /// Rebuilds the program bottom-up from the kept nodes alone, and turns case
+        /// nodes with an unused branch into assertions. Returns the pruned program,
+        /// and the IHR in it of each kept case node, by its IHR in `program`.
+        fn rebuild(
+            program: &RedeemNode,
+            kept: &HashMap<Ihr, Hide>,
+        ) -> (Arc<RedeemNode>, Vec<(Ihr, Ihr)>) {
+            // Nodes in hidden branches are never built, so they cannot constrain the
+            // types of the pruned program.
+            // Because the types of the pruned program may change,
+            // we construct a temporary witness program with unfinalized types.
+            // Nodes are identified by IHR, like the tracker identifies them: building
+            // IHR-equal nodes separately makes each copy keep the branches that only its
+            // twins executed.
+            types::Context::with_context(|inference_context| {
+                let mut built: HashMap<Ihr, Arc<ConstructNode>> = HashMap::new();
+                let mut cases = vec![];
+                for data in program.post_order_iter::<MaxSharing<Redeem>>() {
+                    let node = data.node;
+                    let hide = match kept.get(&node.ihr()) {
+                        Some(&hide) => hide,
+                        // Inside a hidden branch.
+                        None => continue,
+                    };
+                    // Children are visited before their parents, so kept children are built.
+                    let child = |child: &Arc<RedeemNode>| Arc::clone(&built[&child.ihr()]);
+                    let inner = match (node.inner(), hide) {
+                        (Inner::Case(left, right), Hide::Left) => {
+                            Inner::AssertR(left.cmr(), child(right))
+                        }
+                        (Inner::Case(left, right), Hide::Right) => {
+                            Inner::AssertL(child(left), right.cmr())
+                        }
+                        (inner, _) => inner
+                            .as_ref()
+                            .map(&child)
+                            .map_disconnect(|right| Some(child(right)))
+                            // The pruned type is not finalized at this point,
+                            // so we cannot prune the witness value.
+                            .map_witness(|witness| Some(witness.shallow_clone())),
+                    };
+                    let data = ConstructData::from_inner(
+                        &inference_context,
+                        inner
+                            .as_ref()
+                            .map(|node| node.cached_data())
+                            .map_witness(Option::<Value>::clone),
+                    )
+                    .expect("pruned types should check out if unpruned types check out");
+                    let built_node = Arc::new(Node::from_parts(inner, data));
+                    if let Inner::Case(..) = node.inner() {
+                        cases.push((node.ihr(), Arc::clone(&built_node)));
+                    }
+                    built.insert(node.ihr(), built_node);
+                }
+                let pruned_witness_program = &built[&program.ihr()];
+                // Like a decoder, fix the program type to 1 → 1.
+                pruned_witness_program
+                    .set_arrow_to_program()
+                    .expect("pruned program should have program type");
+
+                // Finalize the types of the witness program.
+                // We obtain the pruned redeem program.
+                // Once the pruned type is finalized, we can proceed to prune witness values.
+                let mut finalizer = Finalizer {
+                    ihrs: HashMap::new(),
+                };
+                let pruned = pruned_witness_program
+                    .convert::<InternalSharing, _, _>(&mut finalizer)
+                    .expect("finalization is infallible");
+                let case_ihrs = cases
+                    .iter()
+                    .map(|(ihr, node)| (*ihr, finalizer.ihrs[&Arc::as_ptr(node)]))
+                    .collect();
+                (pruned, case_ihrs)
+            })
         }
 
         // 1) Run the Bit Machine and mark (un)used branches.
@@ -394,66 +527,45 @@ impl RedeemNode {
         let mut mac = BitMachine::for_program(self)?;
         mac.exec_with_tracker(self, env, tracker)?;
 
-        // 2) Find the nodes to keep: those reachable from the root through used branches.
-        let kept = kept_nodes(self, &*tracker);
+        let mut usage = Usage {
+            tracker: &*tracker,
+            merged_into: HashMap::new(),
+            branches: HashMap::new(),
+        };
+        // Every round that does not return merges two groups of case nodes, so there
+        // are at most as many rounds as case nodes.
+        let n_cases = self
+            .post_order_iter::<MaxSharing<Redeem>>()
+            .filter(|data| matches!(data.node.inner(), Inner::Case(..)))
+            .count();
+        let mut round = 0;
+        loop {
+            round += 1;
 
-        // 3) Rebuild the program bottom-up from the kept nodes alone, and turn case
-        // nodes with an unused branch into assertions. Nodes in hidden branches are
-        // never built, so they cannot constrain the types of the pruned program.
-        // Because the types of the pruned program may change,
-        // we construct a temporary witness program with unfinalized types.
-        // Nodes are identified by IHR, like the tracker identifies them: building
-        // IHR-equal nodes separately makes each copy keep the branches that only its
-        // twins executed.
-        types::Context::with_context(|inference_context| {
-            let mut built: HashMap<Ihr, Arc<ConstructNode>> = HashMap::new();
-            for data in self.post_order_iter::<MaxSharing<Redeem>>() {
-                let node = data.node;
-                let hide = match kept.get(&node.ihr()) {
-                    Some(&hide) => hide,
-                    // Inside a hidden branch.
-                    None => continue,
-                };
-                // Children are visited before their parents, so kept children are built.
-                let child = |child: &Arc<RedeemNode>| Arc::clone(&built[&child.ihr()]);
-                let inner = match (node.inner(), hide) {
-                    (Inner::Case(left, right), Hide::Left) => {
-                        Inner::AssertR(left.cmr(), child(right))
+            // 2) Find the nodes to keep: those reachable from the root through used branches.
+            let kept = kept_nodes(self, &mut usage);
+
+            // 3) Rebuild the program from the kept nodes and prune out unused case branches.
+            let (pruned, case_ihrs) = rebuild(self, &kept);
+
+            // 4) Case nodes which became one node in the pruned program must keep the
+            // branches that any of them used, or the node that an encoder keeps hides a
+            // branch which the others use. Merge them, and rebuild if this changed which
+            // branches they keep.
+            let mut by_pruned_ihr = HashMap::new();
+            let mut changed = false;
+            for (ihr, pruned_ihr) in case_ihrs {
+                match by_pruned_ihr.entry(pruned_ihr) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(ihr);
                     }
-                    (Inner::Case(left, right), Hide::Right) => {
-                        Inner::AssertL(child(left), right.cmr())
-                    }
-                    (inner, _) => inner
-                        .as_ref()
-                        .map(&child)
-                        .map_disconnect(|right| Some(child(right)))
-                        // The pruned type is not finalized at this point,
-                        // so we cannot prune the witness value.
-                        .map_witness(|witness| Some(witness.shallow_clone())),
-                };
-                let data = ConstructData::from_inner(
-                    &inference_context,
-                    inner
-                        .as_ref()
-                        .map(|node| node.cached_data())
-                        .map_witness(Option::<Value>::clone),
-                )
-                .expect("pruned types should check out if unpruned types check out");
-                built.insert(node.ihr(), Arc::new(Node::from_parts(inner, data)));
+                    Entry::Occupied(entry) => changed |= usage.merge(*entry.get(), ihr),
+                }
             }
-            let pruned_witness_program = built.remove(&self.ihr()).expect("root is kept");
-            // Like a decoder, fix the program type to 1 → 1.
-            pruned_witness_program
-                .set_arrow_to_program()
-                .expect("pruned program should have program type");
-
-            // 4) Finalize the types of the witness program.
-            // We obtain the pruned redeem program.
-            // Once the pruned type is finalized, we can proceed to prune witness values.
-            Ok(pruned_witness_program
-                .convert::<InternalSharing, _, _>(&mut Finalizer)
-                .expect("finalization is infallible"))
-        })
+            if !changed || round > n_cases {
+                return Ok(pruned);
+            }
+        }
     }
 
     /// Decode a Simplicity program from bits, including the witness data.

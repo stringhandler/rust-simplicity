@@ -1,6 +1,7 @@
 # Unreleased
 
 * Fix pruning keeping witness bits that only a hidden branch reads, which made the pruned program fail to decode with trailing witness bytes. Pruning now types only the nodes reachable through executed branches.
+* Fix pruning hiding different branches of case nodes which become the same node once pruned, which made the encoded program reach a pruned branch.
 
 # 0.9.0 - 2026-09-16
 
