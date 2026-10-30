@@ -3,14 +3,14 @@
 use crate::analysis::NodeBounds;
 use crate::bit_machine::{ExecutionError, PruneTracker, SetTracker};
 use crate::dag::{DagLike, InternalSharing, MaxSharing, PostOrderIterItem};
+use crate::encode;
 use crate::jet::{Jet, JetEnvironment};
 use crate::types::{self, FinalArrow};
-use crate::{encode, BitMachine};
 use crate::{Amr, BitIter, BitWriter, Cmr, DecodeError, Ihr, Imr, Value};
 
 use super::{
     Commit, CommitData, CommitNode, Construct, ConstructData, ConstructNode, Constructible,
-    Converter, Hide, Inner, Marker, NoDisconnect, NoWitness, Node,
+    Converter, Inner, Marker, NoDisconnect, NoWitness, Node,
 };
 
 use std::collections::HashSet;
@@ -294,158 +294,7 @@ impl RedeemNode {
         env: &JE,
         tracker: &mut T,
     ) -> Result<Arc<RedeemNode>, ExecutionError> {
-        struct Pruner<'brand, 't, T> {
-            inference_context: types::Context<'brand>,
-            tracker: &'t mut T,
-        }
-
-        impl<'brand, 't, T> Converter<Redeem, Construct<'brand>> for Pruner<'brand, 't, T>
-        where
-            T: PruneTracker,
-        {
-            type Error = std::convert::Infallible;
-
-            fn convert_witness(
-                &mut self,
-                _: &PostOrderIterItem<&RedeemNode>,
-                witness: &Value,
-            ) -> Result<Option<Value>, Self::Error> {
-                // The pruned type is not finalized at this point,
-                // so we cannot prune the witness value.
-                Ok(Some(witness.shallow_clone()))
-            }
-
-            fn convert_disconnect(
-                &mut self,
-                _: &PostOrderIterItem<&RedeemNode>,
-                right: Option<&Arc<ConstructNode<'brand>>>,
-                _: &Arc<RedeemNode>,
-            ) -> Result<Option<Arc<ConstructNode<'brand>>>, Self::Error> {
-                debug_assert!(
-                    right.is_some(),
-                    "disconnected branch should exist in unpruned redeem program"
-                );
-                Ok(right.map(Arc::clone))
-            }
-
-            fn prune_case(
-                &mut self,
-                data: &PostOrderIterItem<&RedeemNode>,
-                _left: &Arc<ConstructNode>,
-                _right: &Arc<ConstructNode>,
-            ) -> Result<Hide, Self::Error> {
-                // The IHR of the pruned program may change,
-                // but the Converter trait gives us access to the unpruned node (`data`).
-                // The Bit Machine tracked (un)used case branches based on the unpruned IHR.
-                match (
-                    self.tracker.contains_left(data.node.ihr()),
-                    self.tracker.contains_right(data.node.ihr()),
-                ) {
-                    (true, true) => Ok(Hide::Neither),
-                    (false, true) => Ok(Hide::Left),
-                    (true, false) => Ok(Hide::Right),
-                    (false, false) => Ok(Hide::Neither), // case nodes that were never executed will be pruned out by their ancestors
-                }
-            }
-
-            fn convert_data(
-                &mut self,
-                _: &PostOrderIterItem<&RedeemNode>,
-                inner: Inner<
-                    &Arc<ConstructNode<'brand>>,
-                    &Option<Arc<ConstructNode<'brand>>>,
-                    &Option<Value>,
-                >,
-            ) -> Result<ConstructData<'brand>, Self::Error> {
-                let converted_inner = inner
-                    .map(|node| node.cached_data())
-                    .map_witness(Option::<Value>::clone);
-                let retyped = ConstructData::from_inner(&self.inference_context, converted_inner)
-                    .expect("pruned types should check out if unpruned types check out");
-                Ok(retyped)
-            }
-        }
-
-        struct Finalizer;
-
-        impl<'brand> Converter<Construct<'brand>, Redeem> for Finalizer {
-            type Error = std::convert::Infallible;
-
-            fn convert_witness(
-                &mut self,
-                data: &PostOrderIterItem<&ConstructNode>,
-                witness: &Option<Value>,
-            ) -> Result<Value, Self::Error> {
-                let pruned_target_ty = data
-                    .node
-                    .arrow()
-                    .target
-                    .finalize()
-                    .expect("pruned types should check out if unpruned types check out");
-                let pruned_witness = witness
-                    .as_ref()
-                    .expect("witness node that originally stems from redeem program should be populated")
-                    .prune(&pruned_target_ty)
-                    .expect("pruned type should be shrunken version of unpruned type");
-                Ok(pruned_witness)
-            }
-
-            fn convert_disconnect(
-                &mut self,
-                _: &PostOrderIterItem<&ConstructNode>,
-                right: Option<&Arc<RedeemNode>>,
-                _: &Option<Arc<ConstructNode>>,
-            ) -> Result<Arc<RedeemNode>, Self::Error> {
-                Ok(right
-                    .map(Arc::clone)
-                    .expect("disconnect node that originally stems from redeem program should have all branches"))
-            }
-
-            fn convert_data(
-                &mut self,
-                data: &PostOrderIterItem<&ConstructNode>,
-                inner: Inner<&Arc<RedeemNode>, &Arc<RedeemNode>, &Value>,
-            ) -> Result<Arc<RedeemData>, Self::Error> {
-                // Finalize target types of witness nodes in advance so we can prune their values.
-                let final_arrow = data
-                    .node
-                    .arrow()
-                    .finalize()
-                    .expect("pruned types should check out if unpruned types check out");
-                let converted_inner = inner
-                    .map(|node| node.cached_data())
-                    .map_disconnect(|node| node.cached_data())
-                    .map_witness(Value::shallow_clone);
-                Ok(Arc::new(RedeemData::new(final_arrow, converted_inner)))
-            }
-        }
-
-        // 1) Run the Bit Machine and mark (un)used branches.
-        // This is the only fallible step in the pruning process.
-        let mut mac = BitMachine::for_program(self)?;
-        mac.exec_with_tracker(self, env, tracker)?;
-
-        // 2) Prune out unused case branches.
-        // Because the types of the pruned program may change,
-        // we construct a temporary witness program with unfinalized types.
-        // Convert with `MaxSharing`: the tracker keys branch usage by IHR, so
-        // converting IHR-equal nodes separately makes each copy keep the branches
-        // that only its twins executed.
-        types::Context::with_context(|inference_context| {
-            let pruned_witness_program = self
-                .convert::<MaxSharing<Redeem>, _, _>(&mut Pruner {
-                    inference_context,
-                    tracker,
-                })
-                .expect("pruning unused branches is infallible");
-
-            // 3) Finalize the types of the witness program.
-            // We obtain the pruned redeem program.
-            // Once the pruned type is finalized, we can proceed to prune witness values.
-            Ok(pruned_witness_program
-                .convert::<InternalSharing, _, _>(&mut Finalizer)
-                .expect("finalization is infallible"))
-        })
+        super::prune::prune(self, env, tracker)
     }
 
     /// Decode a Simplicity program from bits, including the witness data.
@@ -595,7 +444,7 @@ mod tests {
     use hex::DisplayHex;
     use std::fmt;
     #[cfg(all(feature = "elements", feature = "human_encoding"))]
-    use {crate::types::Final, std::collections::HashMap};
+    use {crate::types::Final, crate::BitMachine, std::collections::HashMap};
 
     #[cfg_attr(not(feature = "base64"), allow(unused_variables))]
     #[track_caller]
