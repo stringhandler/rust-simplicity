@@ -267,9 +267,10 @@ impl RedeemNode {
     /// Prune the redeem program for the given transaction environment.
     ///
     /// Pruning works as follows:
-    /// 1) Run the redeem program on the Bit Machine.
-    /// 2) Mark all (un)used case branches using the IHR of the case node.
-    /// 3) Rebuild the program and omit unused branches.
+    /// 1) Merge nodes with equal IHRs, as the encoding of the program does.
+    /// 2) Run the redeem program on the Bit Machine.
+    /// 3) Mark all (un)used case branches using the IHR of the case node.
+    /// 4) Rebuild the program and omit unused branches.
     ///
     /// The pruning result depends on the witness data (which is already part of the redeem program)
     /// and on the transaction environment. These two inputs determine which case branches are
@@ -277,9 +278,11 @@ impl RedeemNode {
     /// starting from the same original, unpruned program. Pruning is a lossy process, so pruning
     /// an already pruned program is not sound.
     ///
-    /// Pruning fails if the original, unpruned program fails to run on the Bit Machine (step 1).
-    /// In this case, the witness data needs to be revised.
-    /// The other pruning steps (2 & 3) never fail.
+    /// Pruning fails if the program, with its nodes merged in step 1, fails to run on the Bit
+    /// Machine (step 2). In this case, the witness data needs to be revised, unless merging
+    /// changed what the program does: nodes with equal IHRs may hide different branches, and
+    /// no encoding can express such a program.
+    /// The other pruning steps never fail.
     pub fn prune<JE: JetEnvironment>(&self, env: &JE) -> Result<Arc<RedeemNode>, ExecutionError> {
         self.prune_with_tracker(env, &mut SetTracker::default())
     }
@@ -441,10 +444,11 @@ mod tests {
     use crate::human_encoding::Forest;
     use crate::jet::Core;
     use crate::node::SimpleFinalizer;
+    use crate::BitMachine;
     use hex::DisplayHex;
     use std::fmt;
     #[cfg(all(feature = "elements", feature = "human_encoding"))]
-    use {crate::types::Final, crate::BitMachine, std::collections::HashMap};
+    use {crate::types::Final, std::collections::HashMap};
 
     #[cfg_attr(not(feature = "base64"), allow(unused_variables))]
     #[track_caller]
@@ -1013,6 +1017,90 @@ main := comp input comp process jet_verify : 1 -> 1"#;
             &pruned_wit,
             &env,
         );
+    }
+
+    /// Prunes `unpruned` and checks the encoding of the result as consensus does.
+    fn prune_and_check_encoding(unpruned: &RedeemNode) {
+        use crate::ffi::tests::{ffi::SimplicityErr, run_program, TestUpTo};
+        use crate::jet::CoreEnv;
+
+        let env = CoreEnv::new();
+        let pruned = unpruned.prune(&env).expect("pruning should succeed");
+        assert_eq!(pruned.cmr(), unpruned.cmr());
+        let (prog_bytes, witness_bytes) = pruned.to_vec_with_witness();
+        let decoded = RedeemNode::decode::<_, _, Core>(
+            BitIter::from(&prog_bytes[..]),
+            BitIter::from(&witness_bytes[..]),
+        )
+        .expect("pruned program should decode");
+        BitMachine::for_program(&decoded)
+            .expect("pruned program has reasonable bounds")
+            .exec(&decoded, &env)
+            .expect("decoded program should not reach a pruned branch");
+        let c_result = run_program(
+            &prog_bytes,
+            &witness_bytes,
+            TestUpTo::Everything,
+            None,
+            None,
+        )
+        .expect("libsimplicity should decode the pruned program");
+        assert_eq!(c_result.eval_result, SimplicityErr::NoError);
+    }
+
+    #[test]
+    fn prune_merges_nodes_with_equal_ihrs() {
+        // `p1` and `p2` have one IHR, which does not cover the types inside them. Their
+        // case nodes have different types, and so different IHRs, and one only takes its
+        // left branch and the other only its right. An encoding has a single node for
+        // `p1` and `p2`, so its case node must keep both branches.
+        use crate::node::CoreConstructible;
+
+        type ArcNode<'brand> = Arc<ConstructNode<'brand>>;
+
+        let unpruned = types::Context::with_context(|ctx| {
+            let unit = || ArcNode::unit(&ctx);
+            let iden = || ArcNode::iden(&ctx);
+            let g1 = ArcNode::injl(&unit());
+            let g2 = ArcNode::injl(&unit());
+            let p1 = ArcNode::comp(
+                &ArcNode::pair(&iden(), &g1).unwrap(),
+                &ArcNode::case(&unit(), &unit()).unwrap(),
+            )
+            .unwrap();
+            let p2 = ArcNode::comp(
+                &ArcNode::pair(&iden(), &g2).unwrap(),
+                &ArcNode::case(&unit(), &unit()).unwrap(),
+            )
+            .unwrap();
+            // A branch which never runs makes the type of `g1` 2 -> 1 + 2.
+            let verify = ArcNode::jet(&ctx, &Core::Verify);
+            let pins_g1 = ArcNode::comp(
+                &g1,
+                &ArcNode::comp(
+                    &ArcNode::pair(&iden(), &iden()).unwrap(),
+                    &ArcNode::case(&unit(), &ArcNode::take(&verify)).unwrap(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            ArcNode::comp(
+                &ArcNode::pair(
+                    &ArcNode::pair(
+                        &ArcNode::comp(&ArcNode::injl(&unit()), &p1).unwrap(),
+                        &ArcNode::comp(&ArcNode::injr(&unit()), &p2).unwrap(),
+                    )
+                    .unwrap(),
+                    &ArcNode::comp(&ArcNode::injl(&unit()), &pins_g1).unwrap(),
+                )
+                .unwrap(),
+                &unit(),
+            )
+            .unwrap()
+            .finalize_unpruned()
+            .expect("program should finalize")
+        });
+        prune_and_check_encoding(&unpruned);
     }
 }
 

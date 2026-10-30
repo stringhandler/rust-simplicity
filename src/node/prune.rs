@@ -23,12 +23,18 @@ pub(super) fn prune<JE: JetEnvironment, T: PruneTracker>(
     env: &JE,
     tracker: &mut T,
 ) -> Result<Arc<RedeemNode>, ExecutionError> {
-    // 1) Run the Bit Machine and mark (un)used branches.
-    // This is the only fallible step in the pruning process.
-    let mut mac = BitMachine::for_program(program)?;
-    mac.exec_with_tracker(program, env, tracker)?;
+    // 1) Merge nodes with equal IHRs. The IHR covers the source and target types of a
+    // node but not the types inside it, so nodes with equal IHRs can contain case
+    // nodes with different IHRs, which the tracker would mark separately, while the
+    // encoding of the pruned program has a single node for all of them.
+    let program = reduce_to_max_sharing(program);
 
-    // 2) Prune out unused case branches.
+    // 2) Run the Bit Machine and mark (un)used branches.
+    // This is the only fallible step in the pruning process.
+    let mut mac = BitMachine::for_program(&program)?;
+    mac.exec_with_tracker(&program, env, tracker)?;
+
+    // 3) Prune out unused case branches.
     // Because the types of the pruned program may change,
     // we construct a temporary witness program with unfinalized types.
     // Convert with `MaxSharing`: the tracker keys branch usage by IHR, so
@@ -42,13 +48,61 @@ pub(super) fn prune<JE: JetEnvironment, T: PruneTracker>(
             })
             .expect("pruning unused branches is infallible");
 
-        // 3) Finalize the types of the witness program.
+        // 4) Finalize the types of the witness program.
         // We obtain the pruned redeem program.
         // Once the pruned type is finalized, we can proceed to prune witness values.
         Ok(pruned_witness_program
             .convert::<InternalSharing, _, _>(&mut Finalizer)
             .expect("finalization is infallible"))
     })
+}
+
+fn reduce_to_max_sharing(program: &RedeemNode) -> Arc<RedeemNode> {
+    program
+        .convert::<MaxSharing<Redeem>, _, _>(&mut Identity)
+        .expect("copying a program is infallible")
+}
+
+/// Converts a redeem program into a copy of itself. Converting with [`MaxSharing`]
+/// gives a copy with a single node for each IHR, as in the program's encoding.
+struct Identity;
+
+impl Converter<Redeem, Redeem> for Identity {
+    type Error = std::convert::Infallible;
+
+    fn convert_witness(
+        &mut self,
+        _: &PostOrderIterItem<&RedeemNode>,
+        witness: &Value,
+    ) -> Result<Value, Self::Error> {
+        Ok(witness.shallow_clone())
+    }
+
+    fn convert_disconnect(
+        &mut self,
+        _: &PostOrderIterItem<&RedeemNode>,
+        right: Option<&Arc<RedeemNode>>,
+        _: &Arc<RedeemNode>,
+    ) -> Result<Arc<RedeemNode>, Self::Error> {
+        Ok(Arc::clone(right.expect(
+            "disconnect node in redeem program has a right child",
+        )))
+    }
+
+    fn convert_data(
+        &mut self,
+        data: &PostOrderIterItem<&RedeemNode>,
+        inner: Inner<&Arc<RedeemNode>, &Arc<RedeemNode>, &Value>,
+    ) -> Result<Arc<RedeemData>, Self::Error> {
+        let converted_inner = inner
+            .map(|node| node.cached_data())
+            .map_disconnect(|node| node.cached_data())
+            .map_witness(Value::shallow_clone);
+        Ok(Arc::new(RedeemData::new(
+            data.node.arrow().shallow_clone(),
+            converted_inner,
+        )))
+    }
 }
 
 struct Pruner<'brand, 't, T> {
